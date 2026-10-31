@@ -1,0 +1,19 @@
+# ROMs e arquivos de jogos pesados
+sdcard/
+*.nes
+!EDFC/OS_PTBR_TEST.nes
+*.fds
+*.unf
+*.sav
+*.srm
+
+# Backups
+*.bak
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# IDEs e editores
+.vscode/
+.idea/
