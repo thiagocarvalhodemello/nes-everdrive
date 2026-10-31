@@ -60,8 +60,10 @@ Basta descompactar o arquivo `.zip` da release desejada diretamente na raiz do s
 
 ```text
 MicroSD (Raiz)/
+├── TEMAS.NES               # Aplicativo interativo de teste e visualização de temas
 └── EDFC/
-    ├── OS.BIN              # Sistema Operacional traduzido em PT-BR
+    ├── OS.BIN              # Sistema Operacional PT-BR com seletor de temas integrado
+    ├── THEMES.NES          # Aplicativo interativo de temas (cópia dentro da pasta EDFC)
     ├── MAPROUT.BIN         # Tabela de roteamento de mappers (512 bytes)
     ├── mappers.png         # Tabela de referência dos mappers suportados
     ├── MAPS/               # 31 núcleos FPGA (.RBF) compatíveis
@@ -92,12 +94,31 @@ O sistema agora conta com um **Seletor e Personalizador de Temas** (`tools/theme
 
 ### 🕹️ Como Mudar o Tema
 
-#### Método 1: Copiar a Pasta Pronta do Tema Desejado (Mais Fácil)
-Todas as pastas prontas estão disponíveis na pasta `THEMES/`:
-1. Escolha a pasta do tema que preferir (ex: `THEMES/MATRIX/EDFC/` ou `THEMES/CYBERPUNK/EDFC/`).
-2. Copie o arquivo `OS.BIN` dessa pasta para a pasta `EDFC/` do seu cartão MicroSD.
+#### Método 1: Troca Dinâmica em Tempo Real no Console (Atalhos de Controle) ⭐ NOVO!
+Você pode trocar o tema visual **diretamente no console e em tempo real** enquanto navega pelos seus jogos no EverDrive N8! O sistema possui um seletor nativo residente em memória:
 
-#### Método 2: Usar o Script Seletor Interativo
+* 🎮 **`SELECT` + `DIREITA`**: Avança para o próximo tema instantaneamente.
+* 🎮 **`SELECT` + `ESQUERDA`**: Retorna ao tema anterior.
+
+Não precisa reiniciar o console nem desligar o videogame: a paleta de cores (fundo, texto, seleções e caixas de diálogo) atualiza instantaneamente na tela da TV!
+
+---
+
+#### Método 2: Executar o Aplicativo de Demonstração (`TEMAS.NES`)
+Incluímos na raiz e na pasta `EDFC/` a ROM interativa **`TEMAS.NES`** (Mapper 0 / NROM):
+1. No menu do EverDrive, selecione e execute **`TEMAS.NES`** (ou `EDFC/THEMES.NES`).
+2. Use o direcional para testar as 9 paletas em tempo real na tela da sua TV e conferir a tabela completa de cores antes de jogar.
+
+---
+
+#### Método 3: Fixar um Tema Padrão Permanente
+Todas as pastas prontas estão disponíveis na pasta `THEMES/`:
+1. Escolha a pasta do tema que preferir (ex: `THEMES/MATRIX/` ou `THEMES/CYBERPUNK/`).
+2. Copie o arquivo `OS.BIN` dessa pasta para a pasta `EDFC/` do seu cartão MicroSD. Esse tema passará a ser a cor padrão na inicialização do sistema.
+
+---
+
+#### Método 4: Usar o Script Seletor Interativo (PC)
 Execute o utilitário no terminal:
 ```bash
 python tools/theme_selector.py

@@ -2,6 +2,8 @@
 sdcard/
 *.nes
 !EDFC/OS_PTBR_TEST.nes
+!TEMAS.NES
+!EDFC/THEMES.NES
 *.fds
 *.unf
 *.sav
