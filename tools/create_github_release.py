@@ -90,23 +90,37 @@ def ensure_git_tag(tag):
 def build_default_release_body(version_str):
     return f"""## 🎮 EverDrive N8 / Famicom - Tradução Completa PT-BR ({version_str})
 
-Versão oficial atualizada da tradução completa do Sistema Operacional do flashcart **EverDrive N8 / Famicom** (EDFC) com **Seletor de Temas em Tempo Real** e **Persistência de Configuração**!
+Versão oficial atualizada da tradução completa do Sistema Operacional do flashcart **EverDrive N8 / Famicom** (EDFC) com **Banners Gráficos por Tema** (com banner padrão oficial **RETROGAMER POA** flame banner), **Seletor de Temas em Tempo Real** e **Persistência de Configuração na SRAM**!
 
 ---
 
 ### ✨ Novidades da Versão {version_str}:
+* 🔥 **Banners Gráficos de Topo por Tema (Theme Headers):**
+  * Banner padrão oficial: **RETROGAMER POA** flame banner (inspirado nos temas de referência do EverDrive MD customizado por opssemnik).
+  * Cada um dos 9 temas possui seu banner gráfico dedicado de 256x16 pixels de alta fidelidade:
+    1. **RETROGAMER POA** (Banner com chamas e logo flamejante)
+    2. **PADRÃO** (Visual clássico EverDrive azul e branco)
+    3. **SYNTHWAVE** (Grade retrô neon magenta e ciano)
+    4. **OUTRUN** (Pôr do sol retrô anos 80 gradiente)
+    5. **SEGA 16-BIT** (Estilo clássico arcade 16-bit)
+    6. **RETROCHIMP** (Logo estilizado retrô)
+    7. **MAD DRUGA** (Tema gamer verde e preto)
+    8. **CYBERPUNK** (Visual futurista neon e sombras)
+    9. **GAME BOY DMG** (Nostalgia clássica monocromática verde)
+  * Espaço dedicado nas duas primeiras linhas da tela (16 pixels) com separação visual perfeita em relação à listagem de jogos (que se inicia na linha 3).
 * 🎨 **Seletor de Temas Integrado em Tempo Real (In-System Hotkeys):**
-  * Pressione **`SELECT` + `DIREITA`** a qualquer momento no menu para avançar para o próximo tema.
+  * Pressione **`SELECT` + `DIREITA`** a qualquer momento no menu para avançar para o próximo tema e banner.
   * Pressione **`SELECT` + `ESQUERDA`** para retornar ao tema anterior.
   * Troca instantânea na tela da sua TV sem reiniciar o console!
-* 🛠️ **Correção Definitiva de Gráficos:**
-  * Carregamento atômico direto de paleta PPU sem qualquer efeito colateral.
-  * Elimina 100% qualquer risco de tiles embaralhados ou corrupção de fontes na tela.
+* 🛠️ **Arquitetura Glitch-Free e Sem Corrupção:**
+  * Tiles dos banners alocados em slots CHR livres sem colidir com fontes, caracteres cirílicos ou mappers.
+  * Atualização atômica direta de paleta PPU e CHR-RAM com sincronização de scanlines.
+  * Margem de segurança de hardware estritamente abaixo do limite de $FC00 (CPLD MAX II BIOS safe boundary).
 * 💾 **Persistência de Tema ao Reiniciar / Ligar (SRAM & CONFIG.DAT):**
-  * O último tema selecionado é memorizado na SRAM do cartucho e restaurado automaticamente ao reiniciar o console!
-  * Arquivo container `CONFIG.DAT` (512 bytes) incluso na raiz e em `EDFC/` para persistência contínua.
+  * O último tema e banner selecionado é gravado na SRAM do cartucho e restaurado automaticamente ao reiniciar o console!
+  * Arquivo container `CONFIG.DAT` incluso para persistência contínua.
 * 🕹️ **Aplicativo Interativo de Temas (`TEMAS.NES` / `EDFC/THEMES.NES`):**
-  * ROM interativa de demonstração (Mapper 0 / NROM) pronta para testar as 9 paletas direto no console.
+  * ROM interativa de demonstração (Mapper 0 / NROM) inclusa para testes diretos no console ou emuladores.
 
 ---
 
@@ -115,20 +129,21 @@ Versão oficial atualizada da tradução completa do Sistema Operacional do flas
 #### 1. `EDFC-PTBR-v1.16-CloneHardware.zip` (⭐ RECOMENDADO PARA CARTUCHOS CLONES)
 * **Compatibilidade:** Cartuchos EverDrive N8 clone (incluindo revisões recentes do AliExpress como **`Drive-N8 V3.1 2024.07`** com Altera Cyclone II `EP2C5T144C8N` e CPLD MAX II `EPM240`).
 * **Correções e recursos inclusos:**
+  * Banners gráficos no topo da tela com o padrão RETROGAMER POA.
   * Seletor de temas integrado em tempo real (`SELECT + DIREITA` / `SELECT + ESQUERDA`).
   * Persistência de tema com restauração automática no boot.
   * Arquivo container `CONFIG.DAT` incluso.
   * ROM `TEMAS.NES` na raiz e `EDFC/THEMES.NES` inclusos.
   * Sem tela cinza ao iniciar jogos (núcleos FPGA `.RBF` compatíveis restaurados).
   * Sem embaralhamento de pixels ou faixas azuis (sincronização perfeita de CHR-RAM).
-  * Tradução 100% de menus, opções, Game Genie e mensagens de sistema.
+  * Tradução 100% de menus, opções, Game Genie e mensagens de sistema em português do Brasil.
   * Tabela `MAPROUT.BIN` e todos os 31 núcleos de mappers inclusos.
 * **Como instalar:** Basta extrair o conteúdo do arquivo `.zip` diretamente na raiz do seu cartão MicroSD (deve ficar a pasta `EDFC` e os arquivos de inicialização na raiz).
 
 ---
 
 #### 2. `EDFC-THEMES-AllVariants.zip` (🎨 PACOTE DE TEMAS E CORES)
-* **Conteúdo:** 9 temas visuais completos prontos para uso (Clássico, Matrix, Cyberpunk 2077, Game Boy DMG, Âmbar Retrô CRT, Midnight Dark OLED, Crimson Famicom, Deep Ocean e Synthwave Sunset).
+* **Conteúdo:** 9 temas visuais completos prontos para uso com banners integrados e paletas personalizadas.
 * Cada tema inclui seu `OS.BIN`, `CONFIG.DAT` e imagem de pré-visualização `preview.png`.
 * Inclui a ROM `TEMAS.NES` e `CONFIG.DAT`.
 

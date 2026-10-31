@@ -3,7 +3,7 @@
 [![GitHub Releases](https://img.shields.io/github/v/release/thiagocarvalhodemello/nes-everdrive?style=flat-square)](https://github.com/thiagocarvalhodemello/nes-everdrive/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 
-Tradução completa para Português do Brasil (PT-BR) do Sistema Operacional do flashcart **EverDrive N8 / Famicom** (por Igor Golubovskiy / Krikzz), com suporte nativo tanto para placas originais quanto para clones de hardware baseados em Altera Cyclone II e MAX II CPLD (revisão `V3.1 2024.07`).
+Tradução completa para Português do Brasil (PT-BR) do Sistema Operacional do flashcart **EverDrive N8 / Famicom** (por Igor Golubovskiy / Krikzz), com suporte nativo tanto para placas originais quanto para clones de hardware baseados em Altera Cyclone II e MAX II CPLD (revisão `V3.1 2024.07`), agora com **Banners Gráficos por Tema** (banner padrão **RETROGAMER POA**), **Seletor de Temas em Tempo Real** e **Persistência de Configuração na SRAM**!
 
 ---
 
@@ -15,13 +15,29 @@ Disponibilizamos versões pré-empacotadas prontas para uso direto no cartão Mi
 * **Arquivo:** `EDFC-PTBR-v1.16-CloneHardware.zip`
 * **Compatibilidade:** Cartuchos EverDrive N8 clone (ex: AliExpress `Drive-N8 V3.1 2024.07` com Cyclone II `EP2C5T144C8N` e CPLD MAX II `EPM240`).
 * **Características:**
-  * 100% livre de tela cinza ao iniciar jogos.
+  * **Banners Gráficos de Topo:** Header visual temático nas duas primeiras linhas (256x16 pixels) com o banner oficial **RETROGAMER POA** como padrão.
+  * **Seletor de Temas Integrado ao Vivo:** Alterne temas a qualquer momento com as teclas de atalho **`SELECT` + `DIREITA`** e **`SELECT` + `ESQUERDA`**.
+  * **Persistência na SRAM:** O tema selecionado é memorizado na memória estática do cartucho e restaurado automaticamente ao reiniciar.
+  * 100% livre de tela cinza ao iniciar jogos (núcleos FPGA `.RBF` originais restaurados).
   * Barramento de CHR-RAM 100% sincronizado (sem linhas azuis ou pixels/tiles embaralhados).
   * Tradução integral de todos os menus, opções, Game Genie e mensagens de sistema.
   * Conjunto completo de **31 núcleos FPGA (.RBF)** e tabela `MAPROUT.BIN` (512 bytes).
   * 100% de compatibilidade testada com mais de 3.500 jogos da biblioteca de NES/Famicom.
 
-### 2. [Versão Hardware Original (Base Oficial v1.26)](https://github.com/thiagocarvalhodemello/nes-everdrive/releases)
+### 2. [Pacote de Variantes de Temas e Banners](https://github.com/thiagocarvalhodemello/nes-everdrive/releases)
+* **Arquivo:** `EDFC-THEMES-AllVariants.zip`
+* **Conteúdo:** Todos os 9 temas visuais completos prontos para uso com seus respectivos banners gráficos:
+  1. **RETROGAMER POA** (Tema padrão com logo em chamas)
+  2. **PADRÃO** (Visual clássico EverDrive azul e branco)
+  3. **SYNTHWAVE** (Grade retrô neon magenta e ciano)
+  4. **OUTRUN** (Pôr do sol retrô anos 80 gradiente)
+  5. **SEGA 16-BIT** (Estilo arcade 16-bit)
+  6. **RETROCHIMP** (Logo estilizado retrô)
+  7. **MAD DRUGA** (Tema gamer verde e preto)
+  8. **CYBERPUNK** (Visual futurista neon)
+  9. **GAME BOY DMG** (Monocromático clássico verde)
+
+### 3. [Versão Hardware Original (Base Oficial v1.26)](https://github.com/thiagocarvalhodemello/nes-everdrive/releases)
 * **Arquivo:** `EDFC-PTBR-v1.26-OriginalHardware.zip`
 * **Compatibilidade:** EverDrive N8 original da Krikzz.
 * **Características:**
@@ -30,7 +46,7 @@ Disponibilizamos versões pré-empacotadas prontas para uso direto no cartão Mi
   * Suporte a Save States e teclas de atalho.
   * Patches de centralização de texto e versão customizada.
 
-### 3. [ROM de Teste Standalone para Emuladores](https://github.com/thiagocarvalhodemello/nes-everdrive/releases)
+### 4. [ROM de Teste Standalone para Emuladores](https://github.com/thiagocarvalhodemello/nes-everdrive/releases)
 * **Arquivo:** `EDFC-PTBR-Standalone-TestROM.zip`
 * **Compatibilidade:** Mesen, FCEUX, RetroArch, Nestopia e qualquer emulador de NES (Mapper 0).
 * Permite navegar pelo sistema e testar a interface traduzida diretamente no computador.
