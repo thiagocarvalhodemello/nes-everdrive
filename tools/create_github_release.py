@@ -30,7 +30,14 @@ Primeira versão oficial da tradução completa do Sistema Operacional do flashc
 
 ---
 
-#### 2. `EDFC-PTBR-v1.26-OriginalHardware.zip` (PARA HARDWARE ORIGINAL KRIKZZ)
+#### 2. `EDFC-THEMES-AllVariants.zip` (🎨 PACOTE DE TEMAS E CORES)
+* **Conteúdo:** 9 temas visuais completos prontos para uso (Clássico, Matrix, Cyberpunk 2077, Game Boy DMG, Âmbar Retrô CRT, Midnight Dark OLED, Crimson Famicom, Deep Ocean e Synthwave Sunset).
+* Cada tema inclui seu `OS.BIN` pré-configurado e imagem de pré-visualização `preview.png`.
+* **Como usar:** Basta copiar o `OS.BIN` do tema desejado para a pasta `EDFC/` do seu cartão MicroSD.
+
+---
+
+#### 3. `EDFC-PTBR-v1.26-OriginalHardware.zip` (PARA HARDWARE ORIGINAL KRIKZZ)
 * **Compatibilidade:** EverDrive N8 original da Krikzz.
 * **Características:**
   * Base oficial mais recente **v1.26** com tradução integral em PT-BR.
@@ -40,7 +47,7 @@ Primeira versão oficial da tradução completa do Sistema Operacional do flashc
 
 ---
 
-#### 3. `EDFC-PTBR-Standalone-TestROM.zip` (PARA TESTES EM EMULADORES)
+#### 4. `EDFC-PTBR-Standalone-TestROM.zip` (PARA TESTES EM EMULADORES)
 * **Compatibilidade:** Mesen, FCEUX, RetroArch, Nestopia, etc.
 * Contém a ROM `OS_PTBR_TEST.nes` no formato iNES (Mapper 0) para testar a interface traduzida diretamente no PC.
 """
@@ -72,6 +79,7 @@ with urllib.request.urlopen(req) as resp:
 
 assets = [
     ('releases/EDFC-PTBR-v1.16-CloneHardware.zip', 'EDFC-PTBR-v1.16-CloneHardware.zip', 'application/zip'),
+    ('releases/EDFC-THEMES-AllVariants.zip', 'EDFC-THEMES-AllVariants.zip', 'application/zip'),
     ('releases/EDFC-PTBR-v1.26-OriginalHardware.zip', 'EDFC-PTBR-v1.26-OriginalHardware.zip', 'application/zip'),
     ('releases/EDFC-PTBR-Standalone-TestROM.zip', 'EDFC-PTBR-Standalone-TestROM.zip', 'application/zip'),
 ]
