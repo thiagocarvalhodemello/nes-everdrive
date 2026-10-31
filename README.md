@@ -18,9 +18,9 @@ Tradução completa para Português do Brasil (PT-BR) do Sistema Operacional do 
 - **Fonte Customizada com Acentos:**
   - Desenhada e injetada no **Bank 0 (CHR)** com suporte completo a caracteres acentuados (`á`, `ã`, `â`, `é`, `ê`, `í`, `ó`, `õ`, `ô`, `ú`, `ç`, `Á`, `Ã`, `Ç`, `É`, `Í`, `Ó`, `Õ`, `Ú`), tanto para texto normal quanto destacado.
 
-- **Compatibilidade:**
-  - Base oficial **v1.26** (sem encriptação de banco, executável nativamente em clones e originais).
-  - Mappers consolidados atualizados (17 núcleos `.RBF` da v1.26) com nova tabela `MAPROUT.BIN`.
+- **Compatibilidade e Hardware:**
+  - Base oficial **v1.26** com tradução integral e balanceamento de áudio funcional.
+  - Conjunto completo de **31 núcleos FPGA (.RBF)** e tabela de roteamento **`MAPROUT.BIN` (512 bytes)** compatíveis com hardware de placa física (FPGA Cyclone II / placas originais e clones).
   - Acompanha ROM de teste no formato iNES (Mapper 0) compatível com emuladores (Mesen, FCEUX, etc.).
 
 ---
@@ -33,9 +33,9 @@ nes-everdrive/
 │   ├── OS.BIN              # Sistema operacional traduzido (v1.26 PT-BR v1)
 │   ├── OS.BIN.orig         # Cópia original oficial v1.26 (Krikzz)
 │   ├── OS_PTBR_TEST.nes    # ROM independente para testes em emuladores
-│   ├── MAPROUT.BIN         # Tabela de roteamento de mappers v1.26
-│   ├── mappers.png         # Tabela de referência dos mappers v1.26
-│   ├── MAPS/               # 17 núcleos FPGA atualizados (.RBF)
+│   ├── MAPROUT.BIN         # Tabela de roteamento de mappers compatível (512 bytes)
+│   ├── mappers.png         # Tabela de referência dos mappers suportados
+│   ├── MAPS/               # 31 núcleos FPGA compatíveis com hardware (.RBF)
 │   └── SAVE/               # Diretório de Saves
 ├── translate_os_ptbr.py    # Script gerador da tradução e montador do OS.BIN
 ├── tools/                  # Emulador interno de testes e rotinas de validação
