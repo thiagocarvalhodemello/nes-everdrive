@@ -186,17 +186,17 @@ for s_addr, _ in orig_strings:
 
 # Clear movable string regions:
 # Region 1: $F617..$F9FD (998 bytes)
-# Region 2: $FBA2..$FCE0 (318 bytes in unused padding area)
-# Note: $F9FF..$FBA1 contains CC65 initialized DATA and helper code, left completely untouched!
+# Region 2: $FC40..$FDA0 (352 bytes in unused padding area above CC65 DATA copy range $F9FF..$FBFE)
+# Note: $F9FF..$FBFE contains CC65 initialized DATA copied to RAM at boot, left completely untouched!
 for i in range(0x7617, 0x79FD):
     prg[i] = 0
-for i in range(0x7BA2, 0x7CE0):
+for i in range(0x7C40, 0x7DA0):
     prg[i] = 0
 
 cur_r1 = 0x7617
 end_r1 = 0x79FD
-cur_r2 = 0x7BA2
-end_r2 = 0x7CE0
+cur_r2 = 0x7C40
+end_r2 = 0x7DA0
 
 new_addrs = {}
 for s_addr, orig_raw in orig_strings:
@@ -220,7 +220,7 @@ for s_addr, orig_raw in orig_strings:
         raise RuntimeError(f"Out of string space for ${s_addr:04X}!")
 
 print(f"Region 1 ($F617..$F9FD) used: {cur_r1 - 0x7617}/{end_r1 - 0x7617} bytes")
-print(f"Region 2 ($FBA2..$FCE0) used: {cur_r2 - 0x7BA2}/{end_r2 - 0x7BA2} bytes")
+print(f"Region 2 ($FC40..$FDA0) used: {cur_r2 - 0x7C40}/{end_r2 - 0x7C40} bytes")
 
 # Update all pointer table and instruction references
 for s_addr, new_addr in new_addrs.items():

@@ -697,7 +697,7 @@ class EverDriveN8Emu:
                 # Fast-forward VBlank wait loops
                 if self.read(self.PC) == 0x2C and self.read(self.PC+1) == 0x02 and self.read(self.PC+2) == 0x20:
                     self.ppu_status |= 0x80
-                if self.PC == 0x839E and self.ram[0x9E] == 0:
+                if self.PC in (0x839E, 0x838C) and self.ram[0x9E] == 0:
                     break
                 self.step()
             self.ppu_status |= 0x80
@@ -707,6 +707,7 @@ class EverDriveN8Emu:
     def press_button(self, btn_mask, hold_frames=1, wait_frames=15):
         self.run_frames(hold_frames, joy=btn_mask)
         self.ram[0x0484] = 0
+        self.ram[0x051D] = 0
         self.run_frames(wait_frames, joy=0)
 
     def render_screen(self, out_path, scale=2):
