@@ -12,9 +12,11 @@ def package_all():
         "OS_V116_ORIGINAL_PTBR.BIN", "OS_V126_PATCHED.BIN"
     }
     with zipfile.ZipFile(clone_zip, "w", zipfile.ZIP_DEFLATED) as z:
-        # Root TEMAS.NES
+        # Root TEMAS.NES and CONFIG.DAT
         if os.path.exists("TEMAS.NES"):
             z.write("TEMAS.NES", "TEMAS.NES")
+        if os.path.exists("CONFIG.DAT"):
+            z.write("CONFIG.DAT", "CONFIG.DAT")
         
         # Files in EDFC/
         for root, dirs, files in os.walk("EDFC"):
@@ -31,6 +33,8 @@ def package_all():
     with zipfile.ZipFile(themes_zip, "w", zipfile.ZIP_DEFLATED) as z:
         if os.path.exists("TEMAS.NES"):
             z.write("TEMAS.NES", "TEMAS.NES")
+        if os.path.exists("CONFIG.DAT"):
+            z.write("CONFIG.DAT", "CONFIG.DAT")
         for root, dirs, files in os.walk("THEMES"):
             for file in files:
                 full_path = os.path.join(root, file)
@@ -45,6 +49,8 @@ def package_all():
             z.write("EDFC/OS_PTBR_TEST.nes", "OS_PTBR_TEST.nes")
         if os.path.exists("TEMAS.NES"):
             z.write("TEMAS.NES", "TEMAS.NES")
+        if os.path.exists("CONFIG.DAT"):
+            z.write("CONFIG.DAT", "CONFIG.DAT")
 
     print("All release archives packaged successfully!")
 

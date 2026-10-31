@@ -61,8 +61,10 @@ Basta descompactar o arquivo `.zip` da release desejada diretamente na raiz do s
 ```text
 MicroSD (Raiz)/
 ├── TEMAS.NES               # Aplicativo interativo de teste e visualização de temas
+├── CONFIG.DAT              # Arquivo de configuração container / scratchpad
 └── EDFC/
     ├── OS.BIN              # Sistema Operacional PT-BR com seletor de temas integrado
+    ├── CONFIG.DAT          # Configuração persistente do tema ativo
     ├── THEMES.NES          # Aplicativo interativo de temas (cópia dentro da pasta EDFC)
     ├── MAPROUT.BIN         # Tabela de roteamento de mappers (512 bytes)
     ├── mappers.png         # Tabela de referência dos mappers suportados
@@ -100,7 +102,11 @@ Você pode trocar o tema visual **diretamente no console e em tempo real** enqua
 * 🎮 **`SELECT` + `DIREITA`**: Avança para o próximo tema instantaneamente.
 * 🎮 **`SELECT` + `ESQUERDA`**: Retorna ao tema anterior.
 
-Não precisa reiniciar o console nem desligar o videogame: a paleta de cores (fundo, texto, seleções e caixas de diálogo) atualiza instantaneamente na tela da TV!
+A paleta de cores (fundo, texto, seleções e caixas de diálogo) atualiza instantaneamente na tela da TV sem qualquer travamento ou corrupção de tiles!
+
+##### 💾 Como Funciona a Persistência (Salvar ao Reiniciar)
+* **Memória SRAM do Cartucho (Resets e Bateria):** Ao alternar de tema, a configuração é salva instantaneamente na SRAM protegida por bateria (`$7BA6..$7BA9`). Ao apertar o botão Reset do console ou ligar novamente, a rotina de boot restaura o último tema selecionado automaticamente!
+* **Arquivo Container `CONFIG.DAT` (MicroSD):** Disponibilizamos o arquivo container `EDFC/CONFIG.DAT` (e na raiz) como scratchpad de 512 bytes para garantir a persistência de configuração de temas em cartuchos com bateria descarregada ou ausente.
 
 ---
 

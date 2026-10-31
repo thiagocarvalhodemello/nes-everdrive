@@ -167,6 +167,18 @@ def generate_preview(theme_key, out_png):
         if os.path.exists(tmp_name):
             os.remove(tmp_name)
 
+def make_config_dat(theme_id, palette_bytes):
+    """Gera o arquivo container de 512 bytes CONFIG.DAT com as configuracoes do tema."""
+    buf = bytearray(512)
+    buf[0:4] = b"EDFC"
+    buf[4] = 0x01
+    buf[5] = theme_id & 0xFF
+    buf[6] = (theme_id ^ 0xFF) & 0xFF
+    buf[0x10:0x20] = palette_bytes[:16]
+    msg = b"EverDrive N8 Theme Configuration (EDFC/CONFIG.DAT)"
+    buf[0x20:0x20+len(msg)] = msg
+    return bytes(buf)
+
 def export_all_theme_folders(out_dir="THEMES"):
     """Exporta versões prontas do OS.BIN para cada tema em pastas organizadas."""
     os.makedirs(out_dir, exist_ok=True)
@@ -175,7 +187,7 @@ def export_all_theme_folders(out_dir="THEMES"):
     with open(base_v116, "rb") as f:
         base_data = bytearray(f.read())
     
-    for key, info in THEMES.items():
+    for theme_idx, (key, info) in enumerate(THEMES.items()):
         theme_dir = os.path.join(out_dir, key.upper())
         os.makedirs(theme_dir, exist_ok=True)
         
@@ -188,12 +200,17 @@ def export_all_theme_folders(out_dir="THEMES"):
         with open(dest_bin, "wb") as f:
             f.write(themed_os)
             
+        # Gera o CONFIG.DAT do tema
+        dest_cfg = os.path.join(theme_dir, "CONFIG.DAT")
+        with open(dest_cfg, "wb") as f:
+            f.write(make_config_dat(theme_idx, info["palette"]))
+
         # Copia imagem de preview para a pasta do tema
         preview_src = f"docs/themes/{key}.png"
         if os.path.exists(preview_src):
             shutil.copy(preview_src, os.path.join(theme_dir, "preview.png"))
                 
-        print(f"Exportado tema '{info['name']}' -> {theme_dir} (OS.BIN + preview.png)")
+        print(f"Exportado tema '{info['name']}' -> {theme_dir} (OS.BIN + CONFIG.DAT + preview.png)")
 
 def interactive_menu():
     """Menu interativo no terminal para seleção de temas."""
@@ -314,6 +331,13 @@ def main():
         pal = THEMES[args.theme]["palette"]
         res = patch_palette(args.file, pal)
         print(f"Tema '{THEMES[args.theme]['name']}' aplicado em {args.file}: {res}")
+        theme_idx = list(THEMES.keys()).index(args.theme)
+        cfg_bytes = make_config_dat(theme_idx, pal)
+        with open("EDFC/CONFIG.DAT", "wb") as f:
+            f.write(cfg_bytes)
+        with open("CONFIG.DAT", "wb") as f:
+            f.write(cfg_bytes)
+        print("Arquivo container de configuracao gravado: EDFC/CONFIG.DAT e CONFIG.DAT")
         if os.path.exists("EDFC/OS_PTBR_TEST.nes") and args.file == "EDFC/OS.BIN":
             patch_palette("EDFC/OS_PTBR_TEST.nes", pal)
             print(f"Tema também sincronizado em EDFC/OS_PTBR_TEST.nes")

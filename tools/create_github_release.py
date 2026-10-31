@@ -22,6 +22,11 @@ Primeira versão oficial da tradução completa do Sistema Operacional do flashc
   * Pressione **`SELECT` + `DIREITA`** a qualquer momento no menu para avançar para o próximo tema.
   * Pressione **`SELECT` + `ESQUERDA`** para retornar ao tema anterior.
   * Troca instantânea na tela da sua TV sem reiniciar o console!
+* 🛠️ **Correção Definitiva de Gráficos ao Trocar de Tema:**
+  * Rotina de carregamento atômico de paleta PPU que elimina qualquer corrupção de tiles/fontes ou necessidade de reiniciar o console.
+* 💾 **Persistência de Tema ao Reiniciar / Ligar (SRAM & CONFIG.DAT):**
+  * O último tema selecionado é memorizado na SRAM do cartucho e restaurado automaticamente ao reiniciar o console!
+  * Arquivo container `CONFIG.DAT` (512 bytes) incluso para persistência contínua.
 * 🕹️ **Aplicativo Interativo de Temas (`TEMAS.NES` / `EDFC/THEMES.NES`):**
   * ROM interativa de demonstração (Mapper 0 / NROM) pronta para ser executada diretamente do cartão SD.
 

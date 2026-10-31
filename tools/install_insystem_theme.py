@@ -1,61 +1,76 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Instalador do Seletor de Temas Interno do Sistema EverDrive N8 (In-System Live Theme Switcher).
-Permite alternar a paleta de cores em tempo real diretamente pelo controle NES:
-  - SELECT + DIREITA : Próximo tema (Matrix, Cyberpunk, Game Boy, Âmbar, Dark OLED, etc.)
-  - SELECT + ESQUERDA: Tema anterior
-"""
+import os, sys, glob
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from test_persistent_theme import (
+    table_bytes, get_full_payload,
+    TABLE_ADDR, EXPAND_ADDR, BOOT_ADDR, LIVE_ADDR
+)
 
-import os
-import sys
-import glob
+# Extract immutable XOR keys directly from EDFC-ORIGINAL/OS.BIN
+with open("EDFC-ORIGINAL/OS.BIN", "rb") as f:
+    orig_data = f.read()
 
-# Certifica que o diretório de ferramentas está no path
-tools_dir = os.path.dirname(os.path.abspath(__file__))
-if tools_dir not in sys.path:
-    sys.path.insert(0, tools_dir)
+# Bank 15 XOR key starts at offset 0xDAE4 (CPU $FAE4) through 0xDBFE
+# Total length: 0xDBFE - 0xDAE4 = 282 bytes
+XOR_B15 = orig_data[0xDAE4:0xDBFE]
 
-from test_compact_hook import assemble_ultra_compact, table_bytes
+# Hook 1 at CPU $8103 (file 0x6103 in Bank 12): JMP $FB60; NOP; NOP
+XOR_HOOK1 = bytes([0x9E, 0xFB, 0x89, 0xEF, 0x60])
+HOOK1_BYTES = bytes([0x4C, LIVE_ADDR & 0xFF, LIVE_ADDR >> 8, 0xEA, 0xEA])
 
-code, labels = assemble_ultra_compact()
-payload = table_bytes + code
+# Hook 2 at CPU $828C (file 0x628C in Bank 12): JSR $FB34
+XOR_HOOK2 = bytes([0x2F, 0xC7, 0x0A])
+HOOK2_BYTES = bytes([0x20, BOOT_ADDR & 0xFF, BOOT_ADDR >> 8])
 
-# Chave XOR fixa de 160 bytes para Bank 15 no offset 0xDB64
-FIXED_XOR_B15 = bytes([
-    0xCF, 0xC9, 0x6F, 0x42, 0x25, 0x4B, 0x86, 0xFC, 0x84, 0x7B, 0x1D, 0xF4, 0x78, 0x83, 0xEC, 0xBF,
-    0x48, 0x83, 0xA4, 0xBD, 0xC4, 0x6E, 0x05, 0x63, 0x13, 0x25, 0x69, 0x2E, 0x60, 0xF0, 0x24, 0x7E,
-    0x03, 0x94, 0x98, 0x24, 0xFC, 0xDD, 0xAE, 0x47, 0x36, 0xDE, 0x13, 0x88, 0xA2, 0xBC, 0x1E, 0x99,
-    0x30, 0x46, 0x31, 0xB5, 0xBD, 0x2F, 0xC9, 0xA8, 0x5F, 0x4C, 0xF5, 0x5F, 0xF1, 0x99, 0xA2, 0x9C,
-    0x40, 0x38, 0x3B, 0x5E, 0x70, 0x53, 0x34, 0xB1, 0x94, 0x72, 0x07, 0x03, 0x83, 0x4C, 0xD8, 0xC5,
-    0xD4, 0x10, 0xD1, 0x07, 0x7B, 0x8B, 0xE5, 0xD4, 0x9A, 0x76, 0x2C, 0x32, 0xE5, 0xB9, 0x06, 0x5D,
-    0x26, 0x3D, 0x73, 0x95, 0x1B, 0xCA, 0xCC, 0xCE, 0xF5, 0x66, 0x5F, 0xBE, 0x0D, 0x5A, 0xA4, 0x9C,
-    0xBE, 0x5B, 0xC0, 0xC7, 0xC3, 0xE0, 0x7A, 0x94, 0x55, 0x5D, 0x2B, 0xBE, 0x5A, 0xF6, 0x18, 0xD5,
-    0xA5, 0x84, 0x7B, 0x8D, 0xEC, 0x86, 0xE2, 0x55, 0x4F, 0x60, 0x30, 0x26, 0x04, 0x8D, 0x20, 0xAB,
-    0x4F, 0xE0, 0xF6, 0x64, 0x34, 0xAE, 0x56, 0x0F, 0x26, 0x20, 0xB8, 0xE8, 0x00, 0x00, 0x00, 0x00
-])
-
-XOR_B12 = bytes([0x9E, 0xFB, 0x89, 0xEF, 0x60])
-HOOK_INST = bytes([0x4C, 0x88, 0xFB, 0xEA, 0xEA]) # JMP $FB88; NOP; NOP
+def build_bank15_payload():
+    expand_code, boot_code, live_code = get_full_payload()
+    
+    # Base layout from $FAE4
+    payload = bytearray(0xDBFE - 0xDAE4)
+    # $FAE4: prev_buttons = 0, $FAE5: theme_id = 0
+    payload[0x00] = 0x00
+    payload[0x01] = 0x00
+    
+    # Table at $FAEC (offset 0x08 from $FAE4)
+    off_tbl = TABLE_ADDR - 0xFAE4
+    payload[off_tbl : off_tbl + len(table_bytes)] = table_bytes
+    
+    # Expand helper at $FB10
+    off_exp = EXPAND_ADDR - 0xFAE4
+    payload[off_exp : off_exp + len(expand_code)] = expand_code
+    
+    # Boot restore at $FB34
+    off_boot = BOOT_ADDR - 0xFAE4
+    payload[off_boot : off_boot + len(boot_code)] = boot_code
+    
+    # Live switcher at $FB60
+    off_live = LIVE_ADDR - 0xFAE4
+    payload[off_live : off_live + len(live_code)] = live_code
+    
+    return bytes(payload)
 
 def patch_os_bin(os_bin_path):
     with open(os_bin_path, "rb") as f:
         data = bytearray(f.read())
     
-    # 1. Bank 15 payload (table + code at 0xDB64)
-    enc_payload = bytes(p ^ k for p, k in zip(payload, FIXED_XOR_B15[:len(payload)]))
-    data[0xDB64 : 0xDB64 + len(payload)] = enc_payload
+    # 1. Bank 15 payload
+    payload = build_bank15_payload()
+    enc_payload = bytes(p ^ k for p, k in zip(payload, XOR_B15[:len(payload)]))
+    data[0xDAE4 : 0xDAE4 + len(payload)] = enc_payload
     
-    # 2. Bank 12 hook at 0x6103 (CPU $8103)
-    enc_hook = bytes(p ^ k for p, k in zip(HOOK_INST, XOR_B12))
-    data[0x6103 : 0x6108] = enc_hook
+    # 2. Bank 12 Hook 1 (NMI live switch) at 0x6103
+    enc_h1 = bytes(p ^ k for p, k in zip(HOOK1_BYTES, XOR_HOOK1))
+    data[0x6103 : 0x6108] = enc_h1
+    
+    # 3. Bank 12 Hook 2 (Boot screen init) at 0x628C
+    enc_h2 = bytes(p ^ k for p, k in zip(HOOK2_BYTES, XOR_HOOK2))
+    data[0x628C : 0x628F] = enc_h2
     
     with open(os_bin_path, "wb") as f:
         f.write(data)
-    print(f"  [OK] Patched in-system live theme switcher into: {os_bin_path}")
+    print(f"  [OK] Successfully patched: {os_bin_path}")
 
 def main():
-    print("Aplicando o Seletor de Temas Interno nos arquivos OS.BIN...")
+    print("Aplicando o Seletor de Temas com Persistencia e Fix de Graficos nos arquivos OS.BIN...")
     targets = ["EDFC/OS.BIN"] + glob.glob("THEMES/*/OS.BIN")
     for t in targets:
         if os.path.exists(t):
