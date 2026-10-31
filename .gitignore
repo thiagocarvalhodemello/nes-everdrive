@@ -17,3 +17,8 @@ __pycache__/
 # IDEs e editores
 .vscode/
 .idea/
+
+# Arquivos temporários e anexos do usuário
+WhatsApp*
+releases/
+
