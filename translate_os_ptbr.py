@@ -248,6 +248,26 @@ assert prg[d0e1_idx:d0e1_idx+3] == b"\xAD\x05\x05"
 assert prg[d0e1_idx+17:d0e1_idx+20] == b"\x20\x43\xA7"
 prg[d0e1_idx:d0e1_idx+20] = b"\xEA" * 20
 
+# D. Hardware Compatibility Patch: Neutralize writes to registers 0x90 and 0x8F
+# In v1.26, Krikzz added writes to new registers:
+# - Register 0x90 at $B691 (OS version = 0x1A)
+# - Register 0x8F at $B135
+# On clone cartridges with 2014/2015 Cyclone II FPGA bitstreams, registers 0x8F and 0x90
+# do not exist. Due to 4-bit partial address decoding (reg_addr & 0x0F), writing 0x1A
+# to register 0x90 aliases directly to Register 0x80 (PRG/CHR bank 0), clobbering the
+# initial bank mapping and causing scrambled tiles/pixels on all booted games!
+# Neutralizing these writes with NOPs prevents bank aliasing while preserving full OS functionality.
+
+# Patch Reg 0x90: $B691 (PRG offset 0x3691)
+b691_idx = 0xB691 - 0x8000
+assert prg[b691_idx:b691_idx+10] == b"\xA9\x90\x8D\x00\x44\xA9\x1A\x8D\x01\x44", "Unexpected bytes at $B691"
+prg[b691_idx:b691_idx+10] = b"\xEA" * 10
+
+# Patch Reg 0x8F: $B135 (PRG offset 0x3135)
+b135_idx = 0xB135 - 0x8000
+assert prg[b135_idx:b135_idx+8] == b"\xA9\x8F\x8D\x00\x44\x8C\x01\x44", "Unexpected bytes at $B135"
+prg[b135_idx:b135_idx+8] = b"\xEA" * 8
+
 # 5. Assemble and write translated OS.BIN (57,344 bytes)
 new_os_bin = bytearray(0xE000)
 new_os_bin[0x0000:0x2000] = bank0                         # Bank 0: Custom PT-BR font + Save State handler
