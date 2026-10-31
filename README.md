@@ -70,6 +70,54 @@ MicroSD (Raiz)/
 
 ---
 
+## 🎨 Personalização de Temas e Paletas de Cores
+
+O sistema agora conta com um **Seletor e Personalizador de Temas** (`tools/theme_selector.py`) que permite alterar a paleta de cores de toda a interface do EverDrive N8 (fundo, bordas, texto comum, texto selecionado e caixas de diálogo).
+
+### 🌈 Temas Disponíveis
+
+| Tema | Visualização | Descrição e Paleta |
+| :--- | :---: | :--- |
+| **Clássico (Padrão)** | ![Clássico](docs/themes/classico.png) | Fundo preto, texto cinza e destaque amarelo ouro original do EverDrive. |
+| **Matrix / Hacker** | ![Matrix](docs/themes/matrix.png) | Estilo terminal CRT com texto verde fosforescente e destaque lima neon. |
+| **Cyberpunk 2077** | ![Cyberpunk](docs/themes/cyberpunk.png) | Fundo azul noturno profundo com texto ciano elétrico e destaque magenta. |
+| **Game Boy DMG** | ![Game Boy](docs/themes/gameboy.png) | Tons verdes clássicos da tela LCD do Game Boy clássico (1989). |
+| **Âmbar Retrô CRT** | ![Âmbar](docs/themes/ambar.png) | Monitores fósforo âmbar quentes dos computadores dos anos 80. |
+| **Midnight Dark / OLED**| ![Midnight Dark](docs/themes/dark_oled.png)| Preto absoluto com texto cinza cristalino e destaque azul celeste elétrico. |
+| **Crimson Famicom** | ![Crimson](docs/themes/crimson.png) | Fundo escuro com texto vermelho rubi e destaque coral brilhante. |
+| **Deep Ocean** | ![Deep Ocean](docs/themes/ocean.png) | Fundo azul marinho profundo, texto azul suave e destaque ciano cristalino. |
+| **Synthwave Sunset** | ![Sunset](docs/themes/sunset.png) | Fundo púrpura crepúsculo, texto amarelo suave e destaque laranja pôr do sol. |
+
+---
+
+### 🕹️ Como Mudar o Tema
+
+#### Método 1: Copiar a Pasta Pronta do Tema Desejado (Mais Fácil)
+Todas as pastas prontas estão disponíveis na pasta `THEMES/`:
+1. Escolha a pasta do tema que preferir (ex: `THEMES/MATRIX/EDFC/` ou `THEMES/CYBERPUNK/EDFC/`).
+2. Copie o arquivo `OS.BIN` dessa pasta para a pasta `EDFC/` do seu cartão MicroSD.
+
+#### Método 2: Usar o Script Seletor Interativo
+Execute o utilitário no terminal:
+```bash
+python tools/theme_selector.py
+```
+Um menu interativo será exibido para você escolher o tema, aplicar diretamente no seu `OS.BIN` ou gerar pré-visualizações.
+
+#### Método 3: Linha de Comando Direta
+```bash
+# Aplicar tema Matrix
+python tools/theme_selector.py --theme matrix
+
+# Aplicar tema Cyberpunk
+python tools/theme_selector.py --theme cyberpunk
+
+# Criar uma paleta personalizada informando os códigos hexadecimais da paleta NES
+python tools/theme_selector.py --custom 0F,2A,0F,39,0F,0F,0F,0F,0F,0F,0F,0F,0F,30,09,39
+```
+
+---
+
 ## 🛠️ Como Compilar ou Modificar o `OS.BIN`
 
 Requisitos: **Python 3.x**
