@@ -119,10 +119,12 @@ Você pode trocar o tema visual **diretamente no console e em tempo real** enqua
 * 🎮 **`SELECT` + `DIREITA`**: Avança para o próximo tema instantaneamente.
 * 🎮 **`SELECT` + `ESQUERDA`**: Retorna ao tema anterior.
 
-A paleta de cores (fundo, texto, seleções e caixas de diálogo) atualiza instantaneamente na tela da TV sem qualquer travamento ou corrupção de tiles!
+A paleta de cores (fundo, texto, seleções e caixas de diálogo) e o banner são atualizados na tela da TV assim que o sistema volta a aguardar um botão.
+
+> **Segurança do cartão SD:** a interrupção de vídeo (NMI) apenas registra o atalho; a troca de tema é aplicada pelo laço principal do menu, quando não há leitura/gravação no cartão em andamento. Versões anteriores aplicavam o tema dentro da NMI, alterando o registrador de banco do mapper (`$4400/$4401`) e gravando no heap do sistema (`$7BA6`, `$7C00`), o que podia corromper o sistema de arquivos do cartão SD.
 
 ##### 💾 Como Funciona a Persistência (Salvar ao Reiniciar)
-* **Memória SRAM do Cartucho (Resets e Bateria):** Ao alternar de tema, a configuração é salva instantaneamente na SRAM protegida por bateria (`$7BA6..$7BA9`). Ao apertar o botão Reset do console ou ligar novamente, a rotina de boot restaura o último tema selecionado automaticamente!
+* **Memória SRAM do Cartucho (Resets e Bateria):** Ao alternar de tema, a configuração é salva na RAM do cartucho (banco 8, `$7FF8..$7FFB`, fora da área usada pelo heap do sistema). Ao apertar o botão Reset do console ou ligar novamente, a rotina de boot restaura o último tema selecionado automaticamente!
 * **Arquivo Container `CONFIG.DAT` (MicroSD):** Disponibilizamos o arquivo container `EDFC/CONFIG.DAT` (e na raiz) como scratchpad de 512 bytes para garantir a persistência de configuração de temas em cartuchos com bateria descarregada ou ausente.
 
 ---

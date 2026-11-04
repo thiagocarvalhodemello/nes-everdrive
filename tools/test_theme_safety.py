@@ -1,0 +1,166 @@
+"""
+Regression test for the "theme switch corrupts the SD card" bug.
+
+Boots the real (encrypted) OS.BIN through the emulator's decryptor and checks:
+  1. The NMI never touches the mapper ($4400/$4401), the PPU (other than the
+     original $2002 read), or $6000-$7FFF while switching themes.
+  2. An NMI that lands in the middle of an OS mapper sequence (register index
+     selected, foreign bank mapped at $6000) leaves both exactly as they were.
+  3. Theme code never writes into the OS heap window of bank 8 ($7BA5..$7FF7).
+  4. The theme is actually applied (palette, banner nametable, CHR tiles) and
+     persisted, and restored after a reboot that keeps bank 8.
+
+Usage: python tools/test_theme_safety.py [path/to/OS.BIN]   (default EDFC/OS.BIN)
+"""
+import os, sys
+
+TOOLS = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(TOOLS)
+sys.path.insert(0, TOOLS)
+from edfc_emu import EverDriveN8Emu
+from test_banner_complete import build_banner_packages
+
+THEME_ID = 0xFAE5
+SIG = 0x7FF8
+HEAP_LO, HEAP_HI = 0x7BA5, 0x7FF7          # OS bump-allocator window in bank 8
+NMI_OK_RAM = range(0x0000, 0x0800)         # OS NMI writes $9E/$A0/$A1/$0484 + stack
+NMI_OK_B15 = range(0xFAE4, 0xFAE7)         # theme runtime variables
+
+
+class Probe:
+    def __init__(self, emu):
+        self.emu = emu
+        self.in_nmi = False
+        self.nmi_violations = []
+        self.heap_violations = []
+        w, step, nmi = emu.write, emu.step, emu.trigger_nmi
+
+        def write(a, v):
+            a &= 0xFFFF
+            pc = emu.PC
+            if self.in_nmi and not (a in NMI_OK_RAM or a in NMI_OK_B15 or a == 0x4016):
+                self.nmi_violations.append((pc, a, v))
+            bank = emu.reg_data[0x81] & 0x3F
+            theme_code = 0xFAE4 <= pc < 0xFC00 or (0x7F00 <= pc < 0x8000)
+            if theme_code and bank == 8 and HEAP_LO <= a <= HEAP_HI:
+                self.heap_violations.append((pc, a, v))
+            w(a, v)
+
+        def trigger():
+            self.in_nmi = True
+            nmi()
+
+        def stepper():
+            was_rti = emu.read(emu.PC) == 0x40
+            step()
+            if was_rti:
+                self.in_nmi = False
+
+        emu.write, emu.step, emu.trigger_nmi = write, stepper, trigger
+
+
+def boot(os_path, bank8=None):
+    emu = EverDriveN8Emu(os_path, REPO)
+    if bank8 is not None:
+        emu.prg_ram[8][:] = bank8               # cartridge RAM kept across reset
+    probe = Probe(emu)
+    emu.run_frames(40)
+    emu.press_button(0x80, wait_frames=40)      # dismiss boot message -> browser
+    emu.run_frames(20)
+    return emu, probe
+
+
+def theme(emu):
+    return emu.prg_ram[15][THEME_ID - 0xE000]
+
+
+def sig(emu):
+    return list(emu.prg_ram[8][SIG - 0x6000: SIG - 0x6000 + 4])
+
+
+def check_applied(emu, pkgs, tid, label):
+    pkg = pkgs[tid]
+    ok = True
+    if list(emu.palette[0:4]) != list(pkg['pal0']):
+        print(f"    FAIL {label}: palette {bytes(emu.palette[0:4]).hex()} != {bytes(pkg['pal0']).hex()}")
+        ok = False
+    if bytes(emu.vram[0:96]) != bytes(pkg['nametable']):
+        print(f"    FAIL {label}: banner nametable in VRAM differs")
+        ok = False
+    bad = [s for s, tb in pkg['tiles'] if bytes(emu.chr_ram[s*16:(s+1)*16]) != bytes(tb)]
+    if bad:
+        print(f"    FAIL {label}: {len(bad)} CHR tiles not uploaded")
+        ok = False
+    return ok
+
+
+def main(os_path=None):
+    os_path = os_path or os.path.join(REPO, "EDFC", "OS.BIN")
+    os.chdir(REPO)
+    pkgs = build_banner_packages()
+    failures = 0
+
+    def expect(cond, msg):
+        nonlocal failures
+        print(("  [OK]   " if cond else "  [FAIL] ") + msg)
+        if not cond:
+            failures += 1
+
+    print(f"OS image: {os_path}")
+    emu, probe = boot(os_path)
+    expect(theme(emu) == 0 and check_applied(emu, pkgs, 0, "boot"), "boots on theme 0 with banner")
+
+    # --- 1. live switch, next x3, prev x1
+    for btn, want in ((0x21, 1), (0x21, 2), (0x21, 3), (0x22, 2)):
+        emu.press_button(btn, hold_frames=3, wait_frames=30)
+        expect(theme(emu) == want and check_applied(emu, pkgs, want, f"theme {want}"),
+               f"SELECT+{'RIGHT' if btn == 0x21 else 'LEFT'} -> theme {want} applied")
+    expect(sig(emu) == [0xED, 0xFC, 2, 0xFD], f"signature at ${SIG:04X} = {bytes(sig(emu)).hex()}")
+    expect(not probe.nmi_violations,
+           f"NMI made no mapper/PPU/work-RAM writes ({len(probe.nmi_violations)} found: "
+           + ", ".join(f"PC=${p:04X} [${a:04X}]={v:02X}" for p, a, v in probe.nmi_violations[:4]) + ")")
+    expect(not probe.heap_violations,
+           f"theme code never wrote OS heap ${HEAP_LO:04X}-${HEAP_HI:04X} ({len(probe.heap_violations)} found: "
+           + ", ".join(f"PC=${p:04X} [${a:04X}]" for p, a, v in probe.heap_violations[:4]) + ")")
+
+    # --- 2. NMI lands mid-transaction: OS selected reg $09 and mapped bank $12
+    emu.joy_state = 0
+    emu.run_frames(2)
+    emu.reg_addr = 0x09
+    emu.reg_data[0x81] = 0x12
+    emu.joy_state = 0x21
+    ret_pc = emu.PC
+    emu.trigger_nmi()
+    for _ in range(500):
+        emu.step()
+        if not probe.in_nmi:
+            break
+    expect(emu.PC == ret_pc, "NMI returned to interrupted code")
+    expect(emu.reg_addr == 0x09, f"mapper index preserved across NMI (got ${emu.reg_addr:02X})")
+    expect(emu.reg_data[0x81] == 0x12, f"$6000 bank preserved across NMI (got ${emu.reg_data[0x81]:02X})")
+    expect(theme(emu) == 2, "theme NOT applied inside the NMI")
+    emu.reg_addr = 0x81
+    emu.reg_data[0x81] = 0x08                   # OS finishes its sequence
+    emu.joy_state = 0
+    emu.run_frames(30)
+    expect(theme(emu) == 3 and check_applied(emu, pkgs, 3, "deferred"),
+           "queued switch applied later from the idle loop")
+
+    # --- 3. persistence across reset (bank 8 retained, OS.BIN reloaded)
+    saved = bytes(emu.prg_ram[8])
+    emu2, probe2 = boot(os_path, bank8=saved)
+    expect(theme(emu2) == 3 and check_applied(emu2, pkgs, 3, "reboot"), "theme 3 restored after reboot")
+    expect(not probe2.nmi_violations and not probe2.heap_violations, "no unsafe writes during reboot restore")
+
+    # --- 4. garbage in bank 8 must not select an invalid theme
+    junk = bytearray(saved)
+    junk[SIG - 0x6000: SIG - 0x6000 + 4] = bytes([0xED, 0xFC, 0x0C, 0xF3])
+    emu3, _ = boot(os_path, bank8=bytes(junk))
+    expect(theme(emu3) == 0, "invalid signature falls back to theme 0")
+
+    print(f"\n{'PASSED' if failures == 0 else f'FAILED ({failures})'}")
+    return failures
+
+
+if __name__ == "__main__":
+    sys.exit(1 if main(sys.argv[1] if len(sys.argv) > 1 else None) else 0)

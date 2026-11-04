@@ -172,7 +172,13 @@ class EverDriveN8Emu:
 
         # Extract the 256-byte BIOS decryptor page k60 from original OS.BIN[0xDB00:0xDC00] ^ 0x7B
         # (Wait: in case 0xDB00 in translated OS.BIN has data, we use the fixed k60 from the original BIOS!)
-        orig_os = open(r"C:\Development\nes-everdrive\EDFC\OS.BIN.bak" if os.path.exists(r"C:\Development\nes-everdrive\EDFC\OS.BIN.bak") else os_bin_path, "rb").read()
+        # The patched OS.BIN overwrites file 0xDB00.. with the theme runtime, so the
+        # decryptor page must come from the untouched factory image.
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        k60_src = os.path.join(repo_root, "EDFC-ORIGINAL", "OS.BIN")
+        if not os.path.exists(k60_src):
+            k60_src = os_bin_path
+        orig_os = open(k60_src, "rb").read()
         self.k60 = bytes(b ^ 0x7B for b in orig_os[0xDB00:0xDC00])
 
         self.sd_img = build_fat16_image(sd_root_dir)
