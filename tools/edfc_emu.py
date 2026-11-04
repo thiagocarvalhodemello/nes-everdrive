@@ -146,17 +146,22 @@ def build_fat16_image(root_dir):
         pre = b"" if is_plain_83(item) else lfn_entries(item, sfn)
         return pre + make_dir_entry(sfn, attr, cluster, size)
 
+    def skip(item):
+        return item.startswith(".") or item in ('sdcard', 'releases', '__pycache__', 'screens_en', 'screens_ptbr')
+
     def populate_dir(fs_path, parent_cluster, is_root=False):
         entries = bytearray()
         used = set()
         my_cluster = next_cluster if not is_root else 0
         if not is_root:
-            # 8 clusters = 256 entries, room for long-name entries
-            my_cluster = alloc_clusters(bytes(8 * sectors_per_cluster * 512))
+            # size the directory for its entries (8.3 + long-name entries)
+            n = 2 + sum(1 + (len(i) + 13) // 13 for i in os.listdir(fs_path) if not skip(i))
+            clusters = (n * 32 + sectors_per_cluster * 512 - 1) // (sectors_per_cluster * 512)
+            my_cluster = alloc_clusters(bytes(clusters * sectors_per_cluster * 512))
             entries += make_dir_entry(b".          ", 0x10, my_cluster, 0)
             entries += make_dir_entry(b"..         ", 0x10, parent_cluster, 0)
         for item in sorted(os.listdir(fs_path)):
-            if item in ('sdcard', '.git', '__pycache__', 'screens_en', 'screens_ptbr'):
+            if skip(item):
                 continue
             full = os.path.join(fs_path, item)
             if os.path.isdir(full):

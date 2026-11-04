@@ -1,5 +1,5 @@
 """
-Screenshots of the ROM info popup with box art, rendered by the emulator from
+Screenshots of the game menu (cover + options), rendered by the emulator from
 real ROM files and an EDFC/ARTS folder (as produced by art_pack.py install).
 
 Usage:
@@ -14,7 +14,7 @@ REPO = os.path.dirname(TOOLS)
 sys.path.insert(0, TOOLS)
 from edfc_emu import EverDriveN8Emu
 import nes_art
-from test_game_art import open_rom_info
+from test_game_art import open_game_menu
 
 
 def main():
@@ -46,7 +46,7 @@ def main():
         emu.run_frames(20)
         for n, r in enumerate(a.roms):
             name = os.path.splitext(os.path.basename(r))[0]
-            open_rom_info(emu, name[:20])
+            open_game_menu(emu, name[:20])
             slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")[:40]
             path = os.path.join(a.out, f"art_{n}_{slug}.png")
             emu.render_screen(path, scale=2)

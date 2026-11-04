@@ -1,5 +1,5 @@
 """
-End-to-end test for per-game art on the ROM info popup.
+End-to-end test for per-game covers (game menu and ROM info popup).
 
 Builds a throwaway SD card (temp dir) with:
   * a ROM that has art in EDFC/ARTS/<fingerprint>.BIN (synthetic test image)
@@ -76,24 +76,35 @@ class Watch:
         emu.write = write
 
 
-def open_rom_info(emu, name_prefix):
+def select_file(emu, name_prefix):
     for _ in range(30):
         line = [l for l in emu.dump_screen_text().split("\n") if l.startswith("25:")]
         if line and name_prefix in line[0]:
-            break
+            return
         emu.press_button(0x04, wait_frames=15)
-    else:
-        raise AssertionError(f"file {name_prefix!r} not found in browser")
-    emu.press_button(0x40, wait_frames=20)                       # B: file menu
-    emu.press_button(0x04, wait_frames=15)
+    raise AssertionError(f"file {name_prefix!r} not found in browser")
+
+
+def open_game_menu(emu, name_prefix):
+    select_file(emu, name_prefix)
+    emu.press_button(0x40, wait_frames=60)                       # confirm (B): game menu
+
+
+def open_rom_info(emu, name_prefix):
+    open_game_menu(emu, name_prefix)
     emu.press_button(0x04, wait_frames=15)                       # -> "Info da ROM"
-    emu.press_button(0x40, wait_frames=60)                       # open popup
+    emu.press_button(0x40, wait_frames=60)
 
 
 def close_popup(emu):
     emu.press_button(0x80, wait_frames=30)                       # A: close popup
     if "Menu Arquivo" in emu.dump_screen_text():
-        emu.press_button(0x80, wait_frames=30)                   # A: leave file menu
+        emu.press_button(0x80, wait_frames=30)                   # A: leave the game menu
+
+
+def page3(emu):
+    """OS DATA segment in RAM, minus $0360-$037F (variables the OS itself updates)."""
+    return bytes(emu.ram[0x300:0x360]) + bytes(emu.ram[0x380:0x400])
 
 
 def main(shot=None):
@@ -107,6 +118,19 @@ def main(shot=None):
         print(("  [OK]   " if cond else "  [FAIL] ") + msg)
         failures += 0 if cond else 1
 
+    def check_art(emu, label):
+        oam = emu.oam
+        expect(emu.ppu_mask & 0x10 and emu.ppu_ctrl & 0x20,
+               f"{label}: sprites on, 8x16 (mask=${emu.ppu_mask:02X} ctrl=${emu.ppu_ctrl:02X})")
+        expect(oam[0] == 47 and oam[1] == 1 and oam[3] == 192 and oam[47 * 4] == 47 + 80 and oam[47 * 4 + 3] == 248
+               and all(oam[i * 4] >= 0xEF for i in range(48, 64)),
+               f"{label}: OAM layout 64x96 at (192,48), unused sprites hidden")
+        pal = art[0x604:0x610]
+        got = bytes(emu.palette[0x11 + k * 4 + j] for k in range(4) for j in range(3))
+        expect(bytes(emu.chr_ram[0x1000:0x1600]) == art[:0x600] and got == pal
+               and all(oam[i * 4 + 2] == art[0x610 + i] for i in range(48)),
+               f"{label}: CHR tiles, palettes and attributes from the art file")
+
     with tempfile.TemporaryDirectory() as root:
         build_sd(root, art_rom, plain_rom, art)
         emu = EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root)
@@ -114,44 +138,64 @@ def main(shot=None):
         emu.run_frames(40)
         emu.press_button(0x80, wait_frames=40)
         emu.run_frames(20)
+        p3 = page3(emu)
 
-        # --- ROM with art
-        open_rom_info(emu, "Test Game")
-        expect("Info Arquivo" in emu.dump_screen_text(), "ROM info popup shown")
-        expect(emu.ppu_mask & 0x10 and emu.ppu_ctrl & 0x20, f"sprites on, 8x16 (mask=${emu.ppu_mask:02X} ctrl=${emu.ppu_ctrl:02X})")
-        oam = emu.oam
-        expect(oam[0] == 47 and oam[1] == 1 and oam[3] == 192 and oam[47 * 4] == 47 + 80 and oam[47 * 4 + 3] == 248,
-               f"OAM layout 64x96 at (192,48): first={bytes(oam[0:4]).hex()} last={bytes(oam[188:192]).hex()}")
-        expect(all(oam[i * 4] >= 0xEF for i in range(48, 64)), "unused sprites hidden")
-        expect(bytes(emu.chr_ram[0x1000:0x1600]) == art[:0x600], "CHR $1000 holds the art tiles")
-        pal = art[0x604:0x610]
-        got = bytes(emu.palette[0x11 + k * 4 + j] for k in range(4) for j in range(3))
-        expect(got == pal, f"sprite palettes {got.hex()} == {pal.hex()}")
-        expect(all(oam[i * 4 + 2] == art[0x610 + i] for i in range(48)), "per-sprite palette attributes")
+        # --- game menu: cover + "Carregar jogo" + "Info da ROM"
+        open_game_menu(emu, "Test Game")
+        txt = emu.dump_screen_text()
+        expect("Carregar jogo" in txt and "Info da ROM" in txt and "Apenas" not in txt and "Sel. e" not in txt,
+               "game menu items: Carregar jogo, Info da ROM")
+        check_art(emu, "game menu")
         if shot:
             emu.render_screen(shot, scale=2)
             print(f"  screenshot -> {shot}")
+
+        # --- "Info da ROM" from the game menu: popup + cover again
+        emu.press_button(0x04, wait_frames=15)
+        emu.press_button(0x40, wait_frames=60)
+        expect("Info Arquivo" in emu.dump_screen_text(), "Info da ROM opens from the game menu")
+        check_art(emu, "ROM info")
         close_popup(emu)
         sp = watch.sp_hook[-2:]
         expect(len(sp) == 2 and sp[0][0] == 0xCFB2 and sp[1][0] == 0xCFB5 and sp[0][1] == sp[1][1],
-               f"C stack balanced across the hook ({[(hex(a), hex(b)) for a, b in sp]})")
-        expect(not (emu.ppu_mask & 0x10) and emu.ppu_mask == 0x0A, f"sprites off after closing (mask=${emu.ppu_mask:02X})")
-        expect("Info Arquivo" not in emu.dump_screen_text(), "popup closed, browser restored")
+               f"C stack balanced across the ROM info hook ({[(hex(a), hex(b)) for a, b in sp]})")
+        expect(emu.ppu_mask == 0x0A, f"sprites off after closing (mask=${emu.ppu_mask:02X})")
+        txt = emu.dump_screen_text()
+        expect("Info Arquivo" not in txt and "Menu Arquivo" not in txt, "back in the browser")
 
-        # --- ROM without art
-        open_rom_info(emu, "ZZ No Art")
-        expect("Info Arquivo" in emu.dump_screen_text(), "no-art ROM: popup shown")
-        expect(not (emu.ppu_mask & 0x10), "no-art ROM: no sprites")
+        # --- ROM without art: menu works, no sprites
+        open_game_menu(emu, "ZZ No Art")
+        expect("Carregar jogo" in emu.dump_screen_text() and not (emu.ppu_mask & 0x10),
+               "no-art ROM: game menu shown without sprites")
         close_popup(emu)
-        sp = watch.sp_hook[-2:]
-        expect(sp[0][1] == sp[1][1], "no-art ROM: C stack balanced")
-        expect("Info Arquivo" not in emu.dump_screen_text(), "no-art ROM: popup closed")
+        expect("Menu Arquivo" not in emu.dump_screen_text(), "no-art ROM: menu closed")
 
-        # --- everything else still works
+        # --- OS state untouched, theme key still works
+        expect(page3(emu) == p3, "OS DATA segment ($0300-$03FF) unchanged by the cover code")
         before = emu.prg_ram[15][0xFAE5 - 0xE000]
-        emu.press_button(0x21, hold_frames=3, wait_frames=30)
-        expect(emu.prg_ram[15][0xFAE5 - 0xE000] == (before + 1) % 9, "theme switch still works")
+        emu.press_button(0x20, hold_frames=3, wait_frames=40)
+        expect(emu.prg_ram[15][0xFAE5 - 0xE000] == (before + 1) % 9, "SELECT theme switch still works")
         expect(not watch.bad_writes, f"art code wrote no OS work RAM ({watch.bad_writes[:3]})")
+
+        # --- "Carregar jogo" starts the game through the OS ($BF16 select, $B7AC start)
+        open_game_menu(emu, "Test Game")
+        reached = []
+        step = emu.step
+
+        def stop_at_start():
+            if emu.PC in (0xBF16, 0xB7AC):
+                reached.append((emu.PC, emu.ppu_mask))
+                if emu.PC == 0xB7AC:
+                    raise StopIteration
+            step()
+        emu.step = stop_at_start
+        try:
+            emu.press_button(0x40, wait_frames=60)
+        except StopIteration:
+            pass
+        emu.step = step
+        expect([r[0] for r in reached][-2:] == [0xBF16, 0xB7AC] and reached[-1][1] == 0x0A,
+               f"Carregar jogo -> OS select + start, cover hidden first ({[(hex(a), hex(m)) for a, m in reached]})")
 
     print(f"\n{'PASSED' if failures == 0 else f'FAILED ({failures})'}")
     return failures

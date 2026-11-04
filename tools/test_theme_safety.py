@@ -18,7 +18,7 @@ TOOLS = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(TOOLS)
 sys.path.insert(0, TOOLS)
 from edfc_emu import EverDriveN8Emu
-from test_banner_complete import build_banner_packages
+from banner_art import build_banner_packages
 
 THEME_ID = 0xFAE5
 SIG = 0x7FF8
@@ -110,25 +110,31 @@ def main(os_path=None):
     emu, probe = boot(os_path)
     expect(theme(emu) == 0 and check_applied(emu, pkgs, 0, "boot"), "boots on theme 0 with banner")
 
-    # --- 1. live switch, next x3, prev x1
-    for btn, want in ((0x21, 1), (0x21, 2), (0x21, 3), (0x22, 2)):
-        emu.press_button(btn, hold_frames=3, wait_frames=30)
+    # --- 1. SELECT in the browser: next theme (cycles), applied + full redraw
+    for want in (1, 2, 3, 4, 5, 6, 7, 8, 0, 1, 2, 3):
+        emu.press_button(0x20, hold_frames=3, wait_frames=40)
         expect(theme(emu) == want and check_applied(emu, pkgs, want, f"theme {want}"),
-               f"SELECT+{'RIGHT' if btn == 0x21 else 'LEFT'} -> theme {want} applied")
-    expect(sig(emu) == [0xED, 0xFC, 2, 0xFD], f"signature at ${SIG:04X} = {bytes(sig(emu)).hex()}")
+               f"SELECT -> theme {want} applied")
+    expect("Menu Principal" not in emu.dump_screen_text(), "SELECT no longer opens the main menu")
+    expect(sig(emu) == [0xED, 0xFC, 3, 0xFC], f"signature at ${SIG:04X} = {bytes(sig(emu)).hex()}")
     expect(not probe.nmi_violations,
            f"NMI made no mapper/PPU/work-RAM writes ({len(probe.nmi_violations)} found: "
            + ", ".join(f"PC=${p:04X} [${a:04X}]={v:02X}" for p, a, v in probe.nmi_violations[:4]) + ")")
     expect(not probe.heap_violations,
            f"theme code never wrote OS heap ${HEAP_LO:04X}-${HEAP_HI:04X} ({len(probe.heap_violations)} found: "
            + ", ".join(f"PC=${p:04X} [${a:04X}]" for p, a, v in probe.heap_violations[:4]) + ")")
+    expect(bytes(emu.read(0x8103 + i) for i in range(5)) == bytes.fromhex("ad02206840"),
+           "NMI tail is the OS original (LDA $2002 / PLA / RTI)")
 
-    # --- 2. NMI lands mid-transaction: OS selected reg $09 and mapped bank $12
-    emu.joy_state = 0
-    emu.run_frames(2)
+    # --- 2. START opens the main menu; closing it returns to the browser
+    emu.press_button(0x10, hold_frames=2, wait_frames=30)
+    expect("Menu Principal" in emu.dump_screen_text(), "START opens the main menu")
+    emu.press_button(0x80, hold_frames=2, wait_frames=30)
+    expect("Menu Principal" not in emu.dump_screen_text(), "main menu closes back to the browser")
+
+    # --- 2b. an NMI landing mid-transaction leaves the mapper alone
     emu.reg_addr = 0x09
     emu.reg_data[0x81] = 0x12
-    emu.joy_state = 0x21
     ret_pc = emu.PC
     emu.trigger_nmi()
     for _ in range(500):
@@ -136,15 +142,9 @@ def main(os_path=None):
         if not probe.in_nmi:
             break
     expect(emu.PC == ret_pc, "NMI returned to interrupted code")
-    expect(emu.reg_addr == 0x09, f"mapper index preserved across NMI (got ${emu.reg_addr:02X})")
-    expect(emu.reg_data[0x81] == 0x12, f"$6000 bank preserved across NMI (got ${emu.reg_data[0x81]:02X})")
-    expect(theme(emu) == 2, "theme NOT applied inside the NMI")
+    expect(emu.reg_addr == 0x09 and emu.reg_data[0x81] == 0x12, "mapper index and $6000 bank preserved across NMI")
     emu.reg_addr = 0x81
-    emu.reg_data[0x81] = 0x08                   # OS finishes its sequence
-    emu.joy_state = 0
-    emu.run_frames(30)
-    expect(theme(emu) == 3 and check_applied(emu, pkgs, 3, "deferred"),
-           "queued switch applied later from the idle loop")
+    emu.reg_data[0x81] = 0x08
 
     # --- 3. persistence across reset (bank 8 retained, OS.BIN reloaded)
     saved = bytes(emu.prg_ram[8])

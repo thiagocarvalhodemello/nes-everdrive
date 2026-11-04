@@ -36,7 +36,7 @@ def main():
     targets = [
         "EDFC/OS.BIN",
         "sdcard/EDFC/OS.BIN"
-    ] + glob.glob("THEMES/*/OS.BIN")
+    ]
 
     for t in targets:
         if os.path.exists(t):

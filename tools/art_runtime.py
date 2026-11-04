@@ -1,39 +1,37 @@
 """
-Per-game box art on the "Info Arquivo" (ROM info) popup.
+Per-game box art (EDFC/ARTS/<CRC>.BIN) on the game menu and the ROM info popup.
 
-Flow (all main-thread, hooked at $CFB2 where the OS waits for a button with
-the popup on screen; never from the NMI):
-  1. bank-15 stub maps bank $0B and jumps to ART_MAIN (this code, $7B90).
-  2. ART_MAIN copies a small trampoline into internal RAM page $0300. Calls
-     into the OS FAT API go through it: it maps bank 8 (OS work RAM) around
-     the call and maps $0B back, so this code never runs with the wrong bank.
-  3. Rendering off. The selected file is read (sectors 0..4) with the OS's
-     own file API straight into CHR-RAM $1000 (the OS never uses the $1000
-     pattern table), and CRC-32 of file bytes [512, 2560) is computed from
-     the PPU. -> name "XXXXXXXXBIN".
-  4. EDFC/ARTS/XXXXXXXX.BIN is looked up (the OS dir matcher compares
-     exactly 4 characters, hence ARTS) and its 4 sectors streamed to $1000.
-  5. OAM is built in page $0200 (48 8x16 sprites, 64x96 px at x=192, y=48),
-     sprite palettes written, OAM DMA, 8x16 sprites + sprite rendering on.
-  6. The OS button wait ($9F6C) runs; afterwards sprites are switched off.
-No OS heap / work RAM is written: the only RAM used is pages $0200-$03FF
-(cleared at reset, never used by the OS) and zero page $9A-$9D (scratch the
-OS uses only inside its own nametable upload).
-If anything fails (no ART dir, no file, bad magic) the popup behaves as before.
+Entries (bank $0B, reached through bank-15 stubs; always main thread):
+  ART_MENU  hook at $D582 (JSR $CA0D in the ROM file menu "Menu Arquivo"):
+            fetches the selected file's record with the OS ($BC71), shows the
+            cover, runs the OS menu ($CA0D) and hides the cover afterwards.
+  ART_INFO  hook at $CFB2 (JSR $9F6C in "Info Arquivo"): record comes from the
+            ROM info function's own buffer; shows the cover during the wait.
+LOAD: rendering off, ROM sectors 0..4 -> CHR $1000 through the OS file API,
+CRC-32 of file bytes 512..2559 read back from the PPU -> "XXXXXXXXBIN",
+EDFC/ARTS lookup (the OS dir matcher compares exactly 4 characters), art
+sectors -> CHR $1000, 48 8x16 sprites (64x96 px) at x=192 y=48.
+
+RAM: internal RAM only, outside OS data:
+  $0100-$018F  trampoline + variables (hardware stack never goes below $01DF)
+  $0200-$02FF  file record buffer, then the OAM table (OS never reads page 2)
+  zero page $9A-$9D and $30/$31 as scratch (saved/restored around the entries).
+v1.4 kept the trampoline at $0300, which is the OS's cc65 DATA segment (menu
+tables and directory variables): that corrupted the file list until reboot.
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from theme_runtime import assemble, ART_ENTRY
+from theme_runtime import assemble, ART_ENTRY_INFO, ART_ENTRY_MENU
 
-ART_MAIN = 0x7C90           # bank $0B, after theme packages, palette table, loader
-assert ART_MAIN == ART_ENTRY
+ART_MAIN = ART_ENTRY_INFO   # bank $0B, after theme packages, palette table, loader
 ART_LIMIT = 0x8000          # end of bank $0B window
-HOOK_ART = 0xCFB2           # orig: JSR $9F6C (bank 14, stored in plaintext)
-HOOK_ART_KEYSTREAM = bytes(3)
 
 # OS entry points
 OS_WAIT_VBL = 0x83B0
 OS_WAIT_BTN = 0x9F6C
+OS_MENU = 0xCA0D            # generic cursor menu (args already on the C stack)
+OS_GET_ENTRY = 0xBC71       # (index8, buf16) -> file record: cluster32, ..., name
+LIST_BASE, LIST_SEL = 0x0466, 0x8276   # *(u8*)(*LIST_BASE + *LIST_SEL) = file index
 OS_READ_FILE = 0x9541       # (cluster32, dst16, nsect8); dst < $2000 => PPU
 OS_FIND_DIR = 0xAD3B        # (parent32, name*, out32*)
 OS_FIND_FILE = 0x9DC7       # (dir32, name11*, 0, out32*)
@@ -44,10 +42,13 @@ EDFC_CLUSTER = 0x046E       # set by OS init (cluster of /EDFC)
 
 C0, C1, C2, C3 = 0x9A, 0x9B, 0x9C, 0x9D    # CRC accumulator (zero page scratch)
 OAM = 0x0200
+REC = 0x0200               # record buffer (consumed before the OAM table is built)
+SAVE3 = 0x7FE0             # bank $0B scratch: $BC71 writes the 8.3 name at buf+$100 (11 bytes)
 ART_X, ART_Y = 192, 48
 
-# ---- RAM trampoline (assembled for $0300, stored in bank $0B and copied)
-T = 0x0300
+# ---- RAM trampoline (assembled for $0100, stored in bank $0B and copied)
+T = 0x0100
+T_LIMIT = 0x0190
 
 
 def _map(bank):
@@ -63,14 +64,16 @@ def build_tramp():
           (None, "STA", "abs", "T_A")]
     L += _map(0x0B)
     L += [(None, "LDA", "abs", "T_A"), (None, "RTS", "imp", None)]
-    L += [("T_EXIT", "LDA", "imm", 0x81)] + _map(0x08)[1:] + [(None, "RTS", "imp", None)]
+    # exit to the OS with bank 8 mapped, A preserved (menu result)
+    L += [("T_EXIT", "STA", "abs", "T_A"), (None, "LDA", "imm", 0x81)] + _map(0x08)[1:] + \
+         [(None, "LDA", "abs", "T_A"), (None, "RTS", "imp", None)]
     L += [("T_PEEK", "LDA", "imm", 0x81)] + _map(0x08)[1:]
     L += [(None, "LDY", "imm", 3),
           ("PK", "LDA", "indy", 0x30), (None, "STA", "aby", "CLUS"),
           (None, "DEY", "imp", None), (None, "BPL", "rel", "PK")]
     L += _map(0x0B) + [(None, "RTS", "imp", None)]
     VARS = [("ARTSTR", b"arts\x00"), ("NAME11", b"00000000BIN\x00"),
-            ("T_A", b"\x00"), ("T_X", b"\x00"), ("CNT", b"\x00"), ("ADDR", b"\x00"),
+            ("T_A", b"\x00"), ("T_X", b"\x00"), ("RES", b"\x00"), ("ZP", bytes(6)), ("CNT", b"\x00"), ("ADDR", b"\x00"),
             ("CLUS", bytes(4)), ("DIR32", bytes(4)), ("FILE32", bytes(4)), ("PAL", bytes(12))]
     # pass 1 with placeholder variable addresses to learn the code size
     code, _ = assemble(L, T, {n: 0 for n, _ in VARS})
@@ -82,7 +85,7 @@ def build_tramp():
     code, lab = assemble(L, T, sym)
     lab.update(sym)
     data = code + bytes(init)
-    assert len(data) <= 0x100, f"trampoline too big: {len(data)}"
+    assert T + len(data) <= T_LIMIT, f"trampoline too big: {len(data)}"
     return data, lab
 
 
@@ -130,16 +133,63 @@ def _ppu_addr(hi, lo):
 
 def build_main(tramp_len, sym):
     L = [
-        # 1. trampoline -> $0300
-        ("ART_MAIN", "LDX", "imm", tramp_len - 1),
-        ("CP", "LDA", "abx", "TSRC"), (None, "STA", "abx", T),
-        (None, "DEX", "imp", None), (None, "CPX", "imm", 0xFF), (None, "BNE", "rel", "CP"),
-        # 2. file record pointer (C stack frame of the ROM info function) -> cluster
+        # ---- ART_INFO: record = ROM info function's buffer (word at C sp+1)
+        ("ART_INFO", "JSR", "abs", "SETUP"),
         (None, "LDY", "imm", 1), (None, "LDA", "indy", 0x28), (None, "STA", "zp", 0x30),
         (None, "INY", "imp", None), (None, "LDA", "indy", 0x28), (None, "STA", "zp", 0x31),
         (None, "JSR", "abs", "T_PEEK"),
-        # 3. rendering off, read sectors 0..4 of the ROM into CHR $1000
-        (None, "JSR", "abs", OS_WAIT_VBL), (None, "LDA", "imm", 0), (None, "STA", "abs", 0x2001),
+        (None, "JSR", "abs", "LOAD"),
+        (None, "JSR", "abs", "ZPOUT"),
+        *_call(OS_WAIT_BTN, 0),
+        (None, "JSR", "abs", "HIDE"),
+        (None, "JMP", "abs", "T_EXIT"),
+        # ---- ART_MENU: index -> record via the OS, then the OS menu itself
+        ("ART_MENU", "JSR", "abs", "SETUP"),
+        (None, "LDA", "abs", LIST_BASE), (None, "CLC", "imp", None), (None, "ADC", "abs", LIST_SEL),
+        (None, "STA", "zp", 0x30),
+        (None, "LDA", "abs", LIST_BASE + 1), (None, "ADC", "abs", LIST_SEL + 1), (None, "STA", "zp", 0x31),
+        (None, "JSR", "abs", "T_PEEK"),            # CLUS[0] = file index
+        (None, "LDX", "imm", 15),                  # $BC71 overruns REC by 11 bytes into $0300:
+        ("S3", "LDA", "abx", 0x0300), (None, "STA", "abx", SAVE3),   # keep the OS DATA there
+        (None, "DEX", "imp", None), (None, "BPL", "rel", "S3"),
+        (None, "LDA", "abs", "CLUS"), (None, "JSR", "abs", PUSHA),
+        (None, "LDA", "imm", REC & 0xFF), (None, "LDX", "imm", REC >> 8), (None, "JSR", "abs", PUSHAX),
+        *_call(OS_GET_ENTRY, REC & 0xFF, REC >> 8),
+        (None, "PHA", "imp", None),
+        (None, "LDX", "imm", 15),
+        ("R3", "LDA", "abx", SAVE3), (None, "STA", "abx", 0x0300),
+        (None, "DEX", "imp", None), (None, "BPL", "rel", "R3"),
+        (None, "PLA", "imp", None),
+        (None, "BEQ", "rel", "GOTREC"),
+        (None, "CMP", "imm", 0xA0), (None, "BNE", "rel", "NOREC"),
+        ("GOTREC", "LDX", "imm", 3),
+        ("CR", "LDA", "abx", REC), (None, "STA", "abx", "CLUS"), (None, "DEX", "imp", None), (None, "BPL", "rel", "CR"),
+        (None, "JSR", "abs", "LOAD"),
+        ("NOREC", "JSR", "abs", "ZPOUT"),         # the OS menu runs with its own zero page
+        *_call(OS_MENU, 0, 3),
+        (None, "STA", "abs", "RES"),
+        (None, "JSR", "abs", "HIDE"),
+        (None, "LDA", "abs", "RES"),
+        (None, "JMP", "abs", "T_EXIT"),
+        # ---- SETUP: trampoline -> $0100, save zero page scratch
+        ("SETUP", "LDX", "imm", tramp_len - 1),
+        ("CP", "LDA", "abx", "TSRC"), (None, "STA", "abx", T),
+        (None, "DEX", "imp", None), (None, "CPX", "imm", 0xFF), (None, "BNE", "rel", "CP"),
+        (None, "LDX", "imm", 3),
+        ("ZI", "LDA", "abx", C0), (None, "STA", "abx", "ZP"), (None, "DEX", "imp", None), (None, "BPL", "rel", "ZI"),
+        (None, "LDA", "zp", 0x30), (None, "STA", "abs", "ZP+4"), (None, "LDA", "zp", 0x31), (None, "STA", "abs", "ZP+5"),
+        (None, "RTS", "imp", None),
+        ("ZPOUT", "LDX", "imm", 3),
+        ("ZO", "LDA", "abx", "ZP"), (None, "STA", "abx", C0), (None, "DEX", "imp", None), (None, "BPL", "rel", "ZO"),
+        (None, "LDA", "abs", "ZP+4"), (None, "STA", "zp", 0x30), (None, "LDA", "abs", "ZP+5"), (None, "STA", "zp", 0x31),
+        (None, "RTS", "imp", None),
+        ("HIDE", "JSR", "abs", OS_WAIT_VBL),
+        (None, "LDA", "imm", 0x80), (None, "STA", "abs", 0x2000),
+        (None, "LDA", "imm", 0x0A), (None, "STA", "abs", 0x2001),
+        (None, "RTS", "imp", None),
+        # ---- LOAD: show the cover for cluster CLUS (sprites on) or leave the screen as it was
+        ("LOAD", "JSR", "abs", OS_WAIT_VBL),
+        (None, "LDA", "imm", 0), (None, "STA", "abs", 0x2001),
     ]
     L += _push32("CLUS") + [(None, "LDA", "imm", 0x00), (None, "LDX", "imm", 0x10), (None, "JSR", "abs", PUSHAX),
                             (None, "LDA", "imm", 5), (None, "JSR", "abs", PUSHA)]
@@ -222,18 +272,13 @@ def build_main(tramp_len, sym):
           (None, "LDA", "imm", OAM >> 8), (None, "STA", "abs", 0x4014),
           (None, "JSR", "abs", "RESTORE"),
           (None, "LDA", "imm", 0xA0), (None, "STA", "abs", 0x2000),
-          (None, "LDA", "imm", 0x1E), (None, "STA", "abs", 0x2001)]
-    L += _call(OS_WAIT_BTN, 0)
-    L += [(None, "JSR", "abs", OS_WAIT_VBL),
-          (None, "LDA", "imm", 0x80), (None, "STA", "abs", 0x2000),
-          (None, "LDA", "imm", 0x0A), (None, "STA", "abs", 0x2001),
-          (None, "JMP", "abs", "T_EXIT"),
-          # failure: just restore the screen and wait as the OS would
+          (None, "LDA", "imm", 0x1E), (None, "STA", "abs", 0x2001),
+          (None, "RTS", "imp", None),
+          # failure: give the directory back and restore the screen
           ("FAIL_N", "JSR", "abs", "REOPEN"),
           (None, "JSR", "abs", "RESTORE"),
-          (None, "LDA", "imm", 0x0A), (None, "STA", "abs", 0x2001)]
-    L += _call(OS_WAIT_BTN, 0)
-    L += [(None, "JMP", "abs", "T_EXIT"),
+          (None, "LDA", "imm", 0x0A), (None, "STA", "abs", 0x2001),
+          (None, "RTS", "imp", None),
           ("REOPEN", "LDA", "abs", BROWSE_DIR + 2), (None, "STA", "zp", 0x2A),
           (None, "LDA", "abs", BROWSE_DIR + 3), (None, "STA", "zp", 0x2B),
           (None, "LDA", "abs", BROWSE_DIR), (None, "LDX", "abs", BROWSE_DIR + 1),
@@ -255,6 +300,7 @@ def build_main(tramp_len, sym):
           (None, "RTS", "imp", None)]
     # TSRC = trampoline bytes appended after the code
     code, lab = assemble(L, ART_MAIN, dict(sym, TSRC=0))
+    assert lab["ART_MENU"] == ART_ENTRY_MENU, f"ART_MENU at ${lab['ART_MENU']:04X}, theme_runtime expects ${ART_ENTRY_MENU:04X}"
     tsrc = ART_MAIN + len(code)
     code, lab = assemble(L, ART_MAIN, dict(sym, TSRC=tsrc))
     return code, lab
@@ -265,7 +311,7 @@ def build_art_blob():
     code, lab = build_main(len(tramp), tlab)
     blob = code + tramp
     end = ART_MAIN + len(blob)
-    assert end <= ART_LIMIT, f"art runtime too large: ends ${end:04X} > ${ART_LIMIT:04X}"
+    assert end <= SAVE3, f"art runtime too large: ends ${end:04X} > ${SAVE3:04X}"
     lab.update({"_END": end, "_TRAMP": len(tramp)})
     return blob, lab
 

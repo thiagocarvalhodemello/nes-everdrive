@@ -19,12 +19,12 @@ at runtime (the 512-byte one is a sector buffer). The old SRAM signature at
 $7BA6..$7BA9 and banner copy at $7C00..$7C5F lived inside those buffers.
 
 New rules:
-  * NMI (hook 1) only reads the joypad byte the OS already stored, and only
-    writes bank-15 RAM variables + $0484. It never touches $4400/$4401,
-    the PPU (except the original $2002 read), or $6000-$7FFF.
-  * The theme is applied from the OS's "wait for button" idle loops
-    (hook 4, $ABBD), i.e. main-thread UI context, where bank 8 is mapped and
-    no register sequence or sector buffer is in flight.
+  * The NMI is the OS's original one (v1.4 hooked it; restored in v1.5).
+  * SELECT in the file browser is the theme key: the OS's own SELECT branch
+    calls SELNEXT, which applies the next theme in the browser's main-thread
+    context and asks the browser for a full redraw. START opens the main menu.
+  * The theme saved for boot is applied from the OS's "wait for button" idle
+    loops (hook 4, $ABBD), where bank 8 is mapped and nothing is in flight.
   * Persistent signature lives at bank 8 $7FF8..$7FFB, above the highest
     address the OS heap can reach ($7BA5 + 988 bytes of runtime allocations
     = $7F81).
@@ -37,7 +37,7 @@ New rules:
 # ---------------------------------------------------------------------------
 _OPS = {
     # mnemonic: {mode: opcode}
-    "ADC": {"imm": 0x69}, "AND": {"imm": 0x29},
+    "ADC": {"imm": 0x69, "abs": 0x6D}, "AND": {"imm": 0x29},
     "ASL": {"imp": 0x0A},
     "BCC": {"rel": 0x90}, "BCS": {"rel": 0xB0}, "BEQ": {"rel": 0xF0},
     "BMI": {"rel": 0x30}, "BNE": {"rel": 0xD0}, "BPL": {"rel": 0x10},
@@ -107,9 +107,8 @@ REGION_START = 0xFAE4          # bank 15 RAM, all-zero plaintext in the original
 REGION_LEN = 282               # $FAE4..$FBFD (same window the previous build used)
 FILE_REGION = 0xDAE4           # file offset of REGION_START in OS.BIN
 
-PREV_BTN = 0xFAE4              # last joypad byte seen by the NMI hook
 THEME_ID = 0xFAE5              # theme currently on screen
-WANT_ID = 0xFAE6               # theme requested (NMI / boot); applied from idle loop
+WANT_ID = 0xFAE6               # theme requested by BOOT; applied from the idle loop
 FORCE = 0x80                   # WANT_ID bit 7: apply even if equal (boot palette/CHR)
 CODE_START = 0xFAE7
 
@@ -119,28 +118,39 @@ SIG = 0x7FF8                   # bank 8: $ED $FC id ~id (above OS heap ceiling $
 OS_WAIT_VBL = 0x83B0           # BIT $2002 / BPL loop
 OS_REFRESH_NT = 0x8343         # uploads nametable shadow $6000-$63FF to PPU
 OS_DECSP2 = 0xEF47             # first instruction of $ABBD (USB poll in idle loops)
-OS_JOY = 0x0484                # joypad byte written by the NMI handler
-OS_VRAM_BUSY = 0xA2            # nonzero while OS streams VRAM in NMI-sensitive loop
-B11_LOADER = 0x7BC0            # bank $0B: palette + CHR tile loader
+OS_MAIN_MENU = 0xCB50          # "Menu Principal" (Y=0)
+OS_BROWSER_LOOP = 0xD89E       # file browser main loop (checks the redraw flags)
+OS_REDRAW = 0x04D4             # browser: clear + redraw the whole screen when nonzero
 B11_PTRS = 0x6000              # bank $0B: per-theme package pointer table
+NT_BYTES = 64                  # banner nametable rows 0-1 (row 2 = black spacer, generated)
+BLACK_TILE = 0x1F
 
-BTN_NEXT = 0x21                # SELECT + RIGHT
-BTN_PREV = 0x22                # SELECT + LEFT
+# bank $0B layout (shared with test_full_banner_system / art_runtime)
+B11_PAL_TABLE = 0x7A40         # 9 x 4 palette bytes
+B11_LOADER = 0x7A70            # palette + CHR tile loader (<= 208 bytes)
+ART_ENTRY_INFO = 0x7B40        # art_runtime: ROM info entry
+ART_ENTRY_MENU = 0x7B6C        # art_runtime: game menu entry (asserted by art_runtime)
 
-# Hook sites. key = CPU address in bank 12/13 (file offset = cpu - 0x2000),
-# value = (original plaintext, keystream) — keystream = orig_enc ^ orig_plain.
-HOOK_NMI = 0x8103              # orig: LDA $2002 / PLA / RTI   -> JMP LIVE / NOP / NOP
+# Sites patched in the OS. Value: keystream (orig_enc ^ orig_plain) for the
+# bytes written; banks 13/14 are stored in plaintext (keystream 0).
 HOOK_BOOT = 0x828C             # orig: JSR $83B0               -> JSR BOOT
 HOOK_BANNER = 0x83F9           # orig: LDA #$60 / STA $93 / RTS -> JMP BANNER / NOP / NOP
 HOOK_IDLE = 0xABBD             # orig: JSR $EF47               -> JSR IDLE
 HOOK_ART = 0xCFB2              # orig: JSR $9F6C (ROM info wait) -> JSR ART_HOOK
-ART_ENTRY = 0x7C90             # art_runtime.ART_MAIN (bank $0B)
-HOOK_KEYSTREAM = {
-    HOOK_NMI: bytes([0x9E, 0xFB, 0x89, 0xEF, 0x60]),
+HOOK_ART_MENU = 0xD582         # orig: JSR $CA0D (ROM file menu) -> JSR ART_MENU_HOOK
+SITE_NMI = 0x8103              # v1.4 hooked the NMI here; restored to the original
+SITE_START = 0xDBE7            # browser START: was "restart last game" -> main menu
+SITE_SELECT = 0xDBFC           # browser SELECT: was main menu -> next theme
+SITE_MENU_COUNT = 0xD579       # ROM file menu: 3 items -> 2
+SITE_MENU_ITEM1 = 0xD5BA       # "CMP #$01" (item 1 = "Apenas Selec.") -> never; item 1 = ROM info
+SITE_ITEMS = 0xFA9F            # DATA image of the ROM menu item table, item 1 pointer
+SITE_LOAD_STR = 0xF66A         # "Sel. e Iniciar" -> "Carregar jogo"
+KEYSTREAM = {
     HOOK_BOOT: bytes([0x2F, 0xC7, 0x0A]),
     HOOK_BANNER: bytes([0xB6, 0x4E, 0x17, 0x3E, 0x38]),
-    HOOK_IDLE: bytes([0x00, 0x00, 0x00]),        # bank 13 is stored in plaintext
-    HOOK_ART: bytes([0x00, 0x00, 0x00]),         # bank 14 too
+    SITE_NMI: bytes([0x9E, 0xFB, 0x89, 0xEF, 0x60]),
+    SITE_ITEMS: bytes([0x5E, 0xF0]),
+    SITE_LOAD_STR: bytes.fromhex("8bf1897610f9758ee1b2458ea9b0c9"),
 }
 
 
@@ -159,7 +169,7 @@ def build_runtime():
     L += [
         ("BANNER", "LDA", "imm", 0x60),
         (None, "STA", "zp", 0x93),                 # instruction replaced by the hook
-        # BANNER_BODY: copy 96-byte banner nametable of THEME_ID from bank $0B
+        # BANNER_BODY: banner rows 0-1 of THEME_ID from bank $0B + black row 2,
         # into the OS nametable shadow ($6000) and its popup backup ($6400).
         ("BANNER_BODY", "LDA", "imm", 0x81),
         (None, "STA", "abs", 0x4400),
@@ -172,7 +182,7 @@ def build_runtime():
         (None, "STA", "abs", "SMC+1"),
         (None, "LDA", "abx", B11_PTRS + 1),
         (None, "STA", "abs", "SMC+2"),
-        (None, "LDY", "imm", 0x5F),
+        (None, "LDY", "imm", NT_BYTES - 1),
         ("BLP", "LDA", "imm", 0x0B),
         (None, "STA", "abs", 0x4401),
         ("SMC", "LDA", "aby", 0x0000),             # operand patched above
@@ -184,6 +194,12 @@ def build_runtime():
         (None, "STA", "aby", 0x6400),
         (None, "DEY", "imp", None),
         (None, "BPL", "rel", "BLP"),
+        (None, "LDA", "imm", BLACK_TILE),          # row 2: spacer between banner and list
+        (None, "LDY", "imm", 31),
+        ("RLP", "STA", "aby", 0x6000 + NT_BYTES),
+        (None, "STA", "aby", 0x6400 + NT_BYTES),
+        (None, "DEY", "imp", None),
+        (None, "BPL", "rel", "RLP"),
         (None, "LDA", "imm", 0x05),                # attribute row 0: palette 1 for banner
         (None, "LDX", "imm", 0x07),
         ("ALP", "STA", "abx", 0x63C0),
@@ -192,50 +208,8 @@ def build_runtime():
         (None, "RTS", "imp", None),
     ]
 
-    # --- Hook 1: NMI tail. A was pushed by the OS NMI entry; X/Y are NOT saved,
-    # so only A is used. No mapper, no PPU (besides the original $2002 read),
-    # no $6000-$7FFF access.
-    L += [
-        ("LIVE", "LDA", "zp", OS_VRAM_BUSY),
-        (None, "BNE", "rel", "LEXIT"),
-        (None, "LDA", "abs", OS_JOY),
-        (None, "CMP", "abs", PREV_BTN),
-        (None, "STA", "abs", PREV_BTN),
-        (None, "BEQ", "rel", "LHELD"),
-        (None, "CMP", "imm", BTN_NEXT),
-        (None, "BEQ", "rel", "LNEXT"),
-        (None, "CMP", "imm", BTN_PREV),
-        (None, "BNE", "rel", "LEXIT"),
-        (None, "DEC", "abs", WANT_ID),
-        (None, "LDA", "abs", WANT_ID),
-        (None, "CMP", "imm", NUM_THEMES),          # also catches $80|id - 1
-        (None, "BCC", "rel", "LCONS"),
-        (None, "LDA", "imm", NUM_THEMES - 1),
-        (None, "BPL", "rel", "LSTORE"),
-        ("LNEXT", "INC", "abs", WANT_ID),
-        (None, "LDA", "abs", WANT_ID),
-        (None, "CMP", "imm", NUM_THEMES),
-        (None, "BCC", "rel", "LCONS"),
-        (None, "LDA", "imm", 0x00),
-        ("LSTORE", "STA", "abs", WANT_ID),
-        # swallow the combo (also while held) so the OS doesn't act on SELECT
-        ("LCONS", "LDA", "imm", 0x00),
-        (None, "STA", "abs", OS_JOY),
-        ("LEXIT", "BIT", "abs", 0x2002),           # original: LDA $2002
-        (None, "PLA", "imp", None),
-        (None, "RTI", "imp", None),
-        ("LHELD", "CMP", "imm", BTN_NEXT),
-        (None, "BEQ", "rel", "LCONS"),
-        (None, "CMP", "imm", BTN_PREV),
-        (None, "BEQ", "rel", "LCONS"),
-        (None, "BNE", "rel", "LEXIT"),
-    ]
-
-    # --- Hook 2: boot screen init (replaces JSR $83B0). The bank mapped at
-    # $6000 here is whatever the loader left (observed: $0A); the OS maps bank 8
-    # itself a few instructions later, so mapping it now is safe. Only reads
-    # the signature and requests the theme — the real apply happens from the
-    # idle loop once the OS has finished uploading CHR/palette.
+    # --- Hook 2: boot screen init (replaces JSR $83B0). Maps bank 8, reads the
+    # signature and requests the theme; the apply happens from the idle loop.
     L += _map(0x08)
     L[-4] = ("BOOT",) + L[-4][1:]
     L += [
@@ -257,23 +231,11 @@ def build_runtime():
         ("BDONE", "JMP", "abs", OS_WAIT_VBL),
     ]
 
-    # --- Hook 4: $ABBD, called only from the OS "wait for button" loops.
-    # Main thread, bank 8 mapped, no transfer in progress -> safe to bank-switch,
-    # touch the PPU and write the signature.
-    L += [
-        ("IDLE", "LDA", "abs", WANT_ID),
-        (None, "CMP", "abs", THEME_ID),
-        (None, "BNE", "rel", "IGO"),
-        (None, "JMP", "abs", OS_DECSP2),
-        ("IGO", "AND", "imm", 0x7F),               # drop FORCE bit
-        (None, "STA", "abs", THEME_ID),
-        (None, "STA", "abs", WANT_ID),
-        (None, "TXA", "imp", None),
-        (None, "PHA", "imp", None),
-        (None, "TYA", "imp", None),
-        (None, "PHA", "imp", None),
-        (None, "JSR", "abs", OS_WAIT_VBL),
-    ]
+    # --- APPLY (A = theme id): palette + CHR + banner + signature. Main thread,
+    # bank 8 mapped; leaves bank 8 mapped. Clobbers A/X/Y.
+    L += [("APPLY", "STA", "abs", THEME_ID),
+          (None, "STA", "abs", WANT_ID),
+          (None, "JSR", "abs", OS_WAIT_VBL)]
     L += _map(0x0B)
     L += [
         (None, "LDA", "abs", THEME_ID),
@@ -287,20 +249,51 @@ def build_runtime():
         (None, "STA", "abs", SIG + 2),
         (None, "EOR", "imm", 0xFF),
         (None, "STA", "abs", SIG + 3),
+        (None, "RTS", "imp", None),
+    ]
+
+    # --- Browser SELECT (replaces LDY #0 / JSR $CB50 at $DBFC; the OS then
+    # jumps to its browser loop): next theme, applied right here in the
+    # browser's own context, and a full redraw of the screen.
+    L += [
+        ("SELNEXT", "LDX", "abs", THEME_ID),
+        (None, "INX", "imp", None),
+        (None, "CPX", "imm", NUM_THEMES),
+        (None, "BCC", "rel", "SN"),
+        (None, "LDX", "imm", 0),
+        ("SN", "TXA", "imp", None),
+        (None, "JSR", "abs", "APPLY"),
+        (None, "LDA", "imm", 1),
+        (None, "STA", "abs", OS_REDRAW),
+        (None, "RTS", "imp", None),
+    ]
+
+    # --- Hook 4: $ABBD (OS "wait for button" loops): applies the boot request.
+    L += [
+        ("IDLE", "LDA", "abs", WANT_ID),
+        (None, "CMP", "abs", THEME_ID),
+        (None, "BNE", "rel", "IGO"),
+        (None, "JMP", "abs", OS_DECSP2),
+        ("IGO", "AND", "imm", 0x7F),               # drop FORCE bit
+        (None, "TAX", "imp", None),
+        (None, "TYA", "imp", None),
+        (None, "PHA", "imp", None),
+        (None, "TXA", "imp", None),
+        (None, "JSR", "abs", "APPLY"),
         (None, "JSR", "abs", OS_REFRESH_NT),       # push updated shadow to the PPU
         (None, "PLA", "imp", None),
         (None, "TAY", "imp", None),
-        (None, "PLA", "imp", None),
-        (None, "TAX", "imp", None),
         (None, "JMP", "abs", OS_DECSP2),
     ]
 
-    # --- Hook 5: ROM info popup button wait ($CFB2). Main context; the art
-    # runtime in bank $0B (see art_runtime.py) takes over and returns via its
-    # RAM trampoline with bank 8 mapped again.
+    # --- Hooks 5/6: art runtime entries in bank $0B (art_runtime.py); they
+    # return through their RAM trampoline with bank 8 mapped again.
     L += _map(0x0B)
     L[-4] = ("ART_HOOK",) + L[-4][1:]
-    L += [(None, "JMP", "abs", ART_ENTRY)]
+    L += [(None, "JMP", "abs", ART_ENTRY_INFO)]
+    L += _map(0x0B)
+    L[-4] = ("ART_MENU_HOOK",) + L[-4][1:]
+    L += [(None, "JMP", "abs", ART_ENTRY_MENU)]
 
     code, labels = assemble(L, CODE_START)
     end = CODE_START + len(code)
@@ -316,26 +309,35 @@ def build_runtime():
     return bytes(payload), labels
 
 
-def hook_plaintexts(labels):
+def os_patches(labels, orig_data):
+    """{cpu address: plaintext bytes} for every site changed in the OS."""
+    j = lambda op, a: bytes([op, a & 0xFF, a >> 8])
     return {
-        HOOK_NMI: bytes([0x4C, labels["LIVE"] & 0xFF, labels["LIVE"] >> 8, 0xEA, 0xEA]),
-        HOOK_BOOT: bytes([0x20, labels["BOOT"] & 0xFF, labels["BOOT"] >> 8]),
-        HOOK_BANNER: bytes([0x4C, labels["BANNER"] & 0xFF, labels["BANNER"] >> 8, 0xEA, 0xEA]),
-        HOOK_IDLE: bytes([0x20, labels["IDLE"] & 0xFF, labels["IDLE"] >> 8]),
-        HOOK_ART: bytes([0x20, labels["ART_HOOK"] & 0xFF, labels["ART_HOOK"] >> 8]),
+        HOOK_BOOT: j(0x20, labels["BOOT"]),
+        HOOK_BANNER: j(0x4C, labels["BANNER"]) + b"\xEA\xEA",
+        HOOK_IDLE: j(0x20, labels["IDLE"]),
+        HOOK_ART: j(0x20, labels["ART_HOOK"]),
+        HOOK_ART_MENU: j(0x20, labels["ART_MENU_HOOK"]),
+        SITE_NMI: bytes.fromhex("ad02206840"),                       # LDA $2002 / PLA / RTI
+        SITE_START: bytes([0xA0, 0x00]) + j(0x20, OS_MAIN_MENU) + j(0x4C, OS_BROWSER_LOOP),
+        SITE_SELECT: j(0x20, labels["SELNEXT"]) + b"\xEA\xEA",     # then JMP $D89E (original)
+        SITE_MENU_COUNT: bytes([0x02]),
+        SITE_MENU_ITEM1: bytes([0xFE]),
+        SITE_ITEMS: bytes([0x87, 0xF6]),                             # -> "Info da ROM"
+        SITE_LOAD_STR: b"Carregar jogo\x00\x00",                     # 15 bytes, same slot
     }
 
 
 def patch_runtime(data, orig_data):
-    """Patch bank-15 runtime + hooks into an OS.BIN bytearray (in place).
+    """Patch bank-15 runtime + OS sites into an OS.BIN bytearray (in place).
     orig_data: EDFC-ORIGINAL/OS.BIN (its bytes in the region are the keystream,
     since the original plaintext there is all zeros)."""
     payload, labels = build_runtime()
     key = orig_data[FILE_REGION: FILE_REGION + REGION_LEN]
     data[FILE_REGION: FILE_REGION + REGION_LEN] = bytes(p ^ k for p, k in zip(payload, key))
-    for cpu, plain in hook_plaintexts(labels).items():
-        ks = HOOK_KEYSTREAM[cpu]
-        assert len(ks) == len(plain)
+    for cpu, plain in os_patches(labels, orig_data).items():
+        ks = KEYSTREAM.get(cpu, bytes(len(plain)))
+        assert len(ks) == len(plain), hex(cpu)
         off = cpu - 0x2000
         data[off: off + len(plain)] = bytes(p ^ k for p, k in zip(plain, ks))
     return labels
@@ -343,6 +345,6 @@ def patch_runtime(data, orig_data):
 
 if __name__ == "__main__":
     payload, labels = build_runtime()
-    for k in ("BANNER", "BANNER_BODY", "LIVE", "BOOT", "IDLE", "_END"):
-        print(f"  {k:12s} ${labels[k]:04X}")
+    for k in ("BANNER", "BANNER_BODY", "BOOT", "APPLY", "SELNEXT", "IDLE", "ART_HOOK", "ART_MENU_HOOK", "_END"):
+        print(f"  {k:14s} ${labels[k]:04X}")
     print(f"  used {labels['_END'] - REGION_START} / {REGION_LEN} bytes")

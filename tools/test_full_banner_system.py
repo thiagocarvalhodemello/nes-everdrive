@@ -2,8 +2,8 @@ import os, sys, struct, zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from edfc_emu import EverDriveN8Emu, save_png, NES_PALETTE
-from test_banner_complete import build_banner_packages, THEMES_DEF
-from theme_runtime import B11_LOADER
+from banner_art import build_banner_packages, THEMES
+from theme_runtime import B11_LOADER, B11_PAL_TABLE, NT_BYTES
 from art_runtime import ART_MAIN, install_into_bank11
 
 # Opcode dictionary for assembler
@@ -68,8 +68,8 @@ def assemble_listing(listing, base_addr):
 # 1. BUILD BANK 0x0B DATA & ROUTINE
 # -----------------------------------------------------------------
 # Bank $0B layout: theme packages | palette table | theme loader | art runtime
-PAL_TABLE = 0x7B90
-LOADER = B11_LOADER          # $7BC0
+PAL_TABLE = B11_PAL_TABLE
+LOADER = B11_LOADER
 
 def build_bank11_image(packages):
     b11 = bytearray(0x2000) # 8192 bytes
@@ -81,9 +81,9 @@ def build_bank11_image(packages):
     ptrs = []
     for pkg in packages:
         ptrs.append(0x6000 + data_offset)
-        # 96 bytes nametable
-        b11[data_offset : data_offset + 96] = pkg['nametable']
-        data_offset += 96
+        # banner nametable rows 0-1 (row 2, the black spacer, is generated at runtime)
+        b11[data_offset : data_offset + NT_BYTES] = pkg['nametable'][:NT_BYTES]
+        data_offset += NT_BYTES
         # 1 byte num_tiles
         num_tiles = len(pkg['tiles'])
         b11[data_offset] = num_tiles
@@ -104,7 +104,7 @@ def build_bank11_image(packages):
     # Palette table (36 bytes) right after the theme packages
     pal_table_offset = PAL_TABLE - 0x6000
     pal_table_cpu = PAL_TABLE
-    for i, (_, _, _, pal0, _) in enumerate(THEMES_DEF):
+    for i, (_, _, _, pal0) in enumerate(THEMES):
         b11[pal_table_offset + i*4 : pal_table_offset + i*4 + 4] = pal0
 
     # LOAD_THEME routine at LOADER (address shared with theme_runtime.B11_LOADER)
@@ -165,16 +165,16 @@ def build_bank11_image(packages):
         (None, "LDA_ABX", 0x6001),
         (None, "STA_ZP", 0x9B),
 
-        # 5. Read num_tiles at offset 96:
-        (None, "LDY_IMM", 0x60),
+        # 5. Read num_tiles right after the nametable:
+        (None, "LDY_IMM", NT_BYTES),
         (None, "LDA_INDY", 0x9A),
         (None, "BEQ", "FINISH"),
         (None, "STA_ZP", 0x9C),    # tile count
 
-        # Advance pointer past 97 bytes (96 NT + 1 count):
+        # Advance pointer past the nametable + 1 count byte:
         (None, "LDA_ZP", 0x9A),
         (None, "CLC", None),
-        (None, "ADC_IMM", 0x61),
+        (None, "ADC_IMM", NT_BYTES + 1),
         (None, "STA_ZP", 0x9A),
         (None, "LDA_ZP", 0x9B),
         (None, "ADC_IMM", 0x00),

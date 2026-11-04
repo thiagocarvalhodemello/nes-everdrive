@@ -34,10 +34,7 @@ def main():
     if a.arts:
         pkg += ["--arts", a.arts]
     run(*pkg)
-    assets = sorted(glob.glob(os.path.join(REPO, "releases", f"EDFC-N8-*v{a.version}.zip")))
-    full = os.path.join(REPO, "releases", "EDFC-N8-ArtPack-Completo.zip")
-    if os.path.exists(full):
-        assets.append(full)
+    assets = sorted(glob.glob(os.path.join(REPO, "releases", f"EDFC-N8-PTBR-v{a.version}*.zip")))
 
     if subprocess.run(["git", "rev-parse", "-q", "--verify", f"refs/tags/{tag}"], cwd=REPO,
                       capture_output=True).returncode != 0:
