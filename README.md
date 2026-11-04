@@ -111,6 +111,16 @@ O sistema agora conta com um **Seletor e Personalizador de Temas** (`tools/theme
 
 ---
 
+### 🖼️ Temas do Seletor In-System (`SELECT` + `DIREITA`/`ESQUERDA`)
+
+O `OS.BIN` inclui 9 temas com banner gráfico, alternáveis direto no console. Capturas geradas no emulador a partir do `EDFC/OS.BIN` (`python tools/capture_theme_screenshots.py`):
+
+| | | |
+| :---: | :---: | :---: |
+| ![RETROGAMER POA](docs/screenshots/theme0_retrogamer_poa.png)<br>**0 · RETROGAMER POA** | ![PADRÃO](docs/screenshots/theme1_padrao.png)<br>**1 · PADRÃO** | ![SYNTHWAVE](docs/screenshots/theme2_synthwave.png)<br>**2 · SYNTHWAVE** |
+| ![OUTRUN](docs/screenshots/theme3_outrun.png)<br>**3 · OUTRUN** | ![SEGA 16-BIT](docs/screenshots/theme4_sega_16_bit.png)<br>**4 · SEGA 16-BIT** | ![RETROCHIMP](docs/screenshots/theme5_retrochimp.png)<br>**5 · RETROCHIMP** |
+| ![MAD DRUGA](docs/screenshots/theme6_mad_druga.png)<br>**6 · MAD DRUGA** | ![CYBERPUNK](docs/screenshots/theme7_cyberpunk.png)<br>**7 · CYBERPUNK** | ![GAME BOY](docs/screenshots/theme8_game_boy.png)<br>**8 · GAME BOY** |
+
 ### 🕹️ Como Mudar o Tema
 
 #### Método 1: Troca Dinâmica em Tempo Real no Console (Atalhos de Controle) ⭐ NOVO!
