@@ -7,50 +7,19 @@ Tradução completa para Português do Brasil (PT-BR) do Sistema Operacional do 
 
 ---
 
-## 🎮 Versões Disponíveis nas Releases
+## 🎮 Downloads (Releases)
 
-Disponibilizamos versões pré-empacotadas prontas para uso direto no cartão MicroSD na aba [**Releases**](https://github.com/thiagocarvalhodemello/nes-everdrive/releases):
+Na aba [**Releases**](https://github.com/thiagocarvalhodemello/nes-everdrive/releases) (versão atual: **v1.4**):
 
-### 1. [Versão Clone Hardware (Recomendada para Placas V3.1 e Cyclone II)](https://github.com/thiagocarvalhodemello/nes-everdrive/releases)
-* **Arquivo:** `EDFC-PTBR-v1.16-CloneHardware.zip`
-* **Compatibilidade:** Cartuchos EverDrive N8 clone (ex: AliExpress `Drive-N8 V3.1 2024.07` com Cyclone II `EP2C5T144C8N` e CPLD MAX II `EPM240`).
-* **Características:**
-  * **Banners Gráficos de Topo:** Header visual temático nas duas primeiras linhas (256x16 pixels) com o banner oficial **RETROGAMER POA** como padrão.
-  * **Espaçamento e Caracteres Acentuados Otimizados:** Linha 2 com respiro visual dedicado e fontes acentuadas PT-BR (`Opções`, `Trapaças`, etc.) 100% nítidas sem conflito com os gráficos do cabeçalho.
-  * **Seletor de Temas Integrado ao Vivo:** Alterne temas a qualquer momento com as teclas de atalho **`SELECT` + `DIREITA`** e **`SELECT` + `ESQUERDA`**.
-  * **Persistência na SRAM:** O tema selecionado é memorizado na memória estática do cartucho e restaurado automaticamente ao reiniciar.
-  * 100% livre de tela cinza ao iniciar jogos (núcleos FPGA `.RBF` originais restaurados).
-  * Barramento de CHR-RAM 100% sincronizado (sem linhas azuis ou pixels/tiles embaralhados).
-  * Tradução integral de todos os menus, opções, Game Genie e mensagens de sistema.
-  * Conjunto completo de **31 núcleos FPGA (.RBF)** e tabela `MAPROUT.BIN` (512 bytes).
-  * 100% de compatibilidade testada com mais de 3.500 jogos da biblioteca de NES/Famicom.
+| Arquivo | O que é |
+| :--- | :--- |
+| `EDFC-N8-PTBR-v1.4.zip` | **Sistema completo para o cartão** (placas clone `Drive-N8 V3.1 2024.07`, Cyclone II `EP2C5T144C8N` + MAX II `EPM240`): `OS.BIN` PT-BR com temas e capas, 31 núcleos FPGA, `MAPROUT.BIN`, pasta `SAVE`. Extraia na raiz do MicroSD. |
+| `EDFC-N8-Capas-v1.4.zip` | **Capas prontas** (2.504 jogos, `EDFC/ARTS/`) identificadas pelo conteúdo da ROM: funcionam com dumps padrão No-Intro/GoodNES, independente do nome do arquivo. Extraia na raiz do MicroSD. |
+| `EDFC-N8-ArtPack-Completo.zip` | **Todas as 13.422 capas** do libretro-thumbnails já convertidas, para gerar capas da sua coleção com `tools/art_pack.py install`. |
 
-### 2. [Pacote de Variantes de Temas e Banners](https://github.com/thiagocarvalhodemello/nes-everdrive/releases)
-* **Arquivo:** `EDFC-THEMES-AllVariants.zip`
-* **Conteúdo:** Todos os 9 temas visuais completos prontos para uso com seus respectivos banners gráficos:
-  1. **RETROGAMER POA** (Tema padrão com logo em chamas)
-  2. **PADRÃO** (Visual clássico EverDrive azul e branco)
-  3. **SYNTHWAVE** (Grade retrô neon magenta e ciano)
-  4. **OUTRUN** (Pôr do sol retrô anos 80 gradiente)
-  5. **SEGA 16-BIT** (Estilo arcade 16-bit)
-  6. **RETROCHIMP** (Logo estilizado retrô)
-  7. **MAD DRUGA** (Tema gamer verde e preto)
-  8. **CYBERPUNK** (Visual futurista neon)
-  9. **GAME BOY DMG** (Monocromático clássico verde)
+A versão para **hardware original Krikzz (base v1.26)** continua disponível na [release v1.3](https://github.com/thiagocarvalhodemello/nes-everdrive/releases/tag/v1.3-ptbr).
 
-### 3. [Versão Hardware Original (Base Oficial v1.26)](https://github.com/thiagocarvalhodemello/nes-everdrive/releases)
-* **Arquivo:** `EDFC-PTBR-v1.26-OriginalHardware.zip`
-* **Compatibilidade:** EverDrive N8 original da Krikzz.
-* **Características:**
-  * Base oficial mais recente **v1.26** com tradução integral em PT-BR.
-  * Menu de Balanço de Áudio de expansão (FDS, VRC6, VRC7, Namco-163, MMC5, Sunsoft-5B).
-  * Suporte a Save States e teclas de atalho.
-  * Patches de centralização de texto e versão customizada.
-
-### 4. [ROM de Teste Standalone para Emuladores](https://github.com/thiagocarvalhodemello/nes-everdrive/releases)
-* **Arquivo:** `EDFC-PTBR-Standalone-TestROM.zip`
-* **Compatibilidade:** Mesen, FCEUX, RetroArch, Nestopia e qualquer emulador de NES (Mapper 0).
-* Permite navegar pelo sistema e testar a interface traduzida diretamente no computador.
+![Capas dos jogos na tela Info da ROM](docs/screenshots/art_grid.png)
 
 ---
 
@@ -73,20 +42,19 @@ Disponibilizamos versões pré-empacotadas prontas para uso direto no cartão Mi
 
 ## 📦 Estrutura de Arquivos no Cartão MicroSD
 
-Basta descompactar o arquivo `.zip` da release desejada diretamente na raiz do seu cartão MicroSD (formatado em FAT16 ou FAT32):
+Basta descompactar `EDFC-N8-PTBR-v1.4.zip` (e, se quiser, `EDFC-N8-Capas-v1.4.zip`) diretamente na raiz do seu cartão MicroSD (formatado em FAT16 ou FAT32):
 
 ```text
 MicroSD (Raiz)/
-├── TEMAS.NES               # Aplicativo interativo de teste e visualização de temas
-├── CONFIG.DAT              # Arquivo de configuração container / scratchpad
+├── TEMAS.NES               # Aplicativo de visualização das paletas de temas
 └── EDFC/
-    ├── OS.BIN              # Sistema Operacional PT-BR com seletor de temas integrado
-    ├── CONFIG.DAT          # Configuração persistente do tema ativo
-    ├── THEMES.NES          # Aplicativo interativo de temas (cópia dentro da pasta EDFC)
+    ├── OS.BIN              # Sistema Operacional PT-BR (temas, banners e capas)
+    ├── THEMES.NES          # Cópia do aplicativo de temas
     ├── MAPROUT.BIN         # Tabela de roteamento de mappers (512 bytes)
     ├── mappers.png         # Tabela de referência dos mappers suportados
     ├── MAPS/               # 31 núcleos FPGA (.RBF) compatíveis
-    └── SAVE/               # Diretório para armazenamento dos saves de bateria
+    ├── SAVE/               # Saves de bateria (obrigatória)
+    └── ARTS/               # Capas dos jogos (opcional, EDFC-N8-Capas-*.zip)
 ```
 
 ---
@@ -125,7 +93,7 @@ O `OS.BIN` inclui 9 temas com banner gráfico, alternáveis direto no console. C
 
 Ao abrir **Menu Arquivo → Info da ROM**, o sistema mostra a capa do jogo (64×96 px, 48 sprites 8×16, 4 paletas de 3 cores) ao lado da janela de informações:
 
-![Capa na Info da ROM](docs/screenshots/rom_info_art_test.png)
+![Capa na Info da ROM](docs/screenshots/art_2_legend_of_zelda_the_usa_rev_1.png)
 
 * **Identificação pelo conteúdo, não pelo nome:** o console calcula o CRC-32 dos bytes 512–2559 da ROM e procura `EDFC/ARTS/<CRC>.BIN` no cartão (a pasta tem 4 letras porque o OS compara nomes de pasta com exatamente 4 caracteres). Traduções, revisões e a maioria dos hacks compartilham a capa do jogo original.
 * **Seguro para o cartão SD:** a leitura usa a API de arquivos do próprio OS, no laço principal, direto para a CHR-RAM (`$1000`, tabela não usada pelo OS). Nada é escrito no cartão nem na RAM de trabalho do OS.
