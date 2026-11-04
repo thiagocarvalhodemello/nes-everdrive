@@ -95,9 +95,14 @@ Versão oficial atualizada da tradução completa do Sistema Operacional do flas
 ---
 
 ### ✨ Novidades da Versão {version_str}:
+* 🔤 **Correção Definitiva de Caracteres Acentuados no Menu:**
+  * Remapeamento e compactação rigorosa dos caracteres acentuados da língua portuguesa (`á, ã, é, í, ó, õ, ú, ç, Á, Ã`) nos slots CHR `0x01..0x0A` (e `0x81..0x8A` destacados).
+  * Eliminação de qualquer conflito entre os gráficos do banner e as fontes do sistema. Palavras como **"Opções"** e **"Trapaças"** agora são exibidas com 100% de nitidez e fidelidade gráfica.
+* 📏 **Linha de Respiro e Espaçamento Dedicado (Linha 2):**
+  * Inserção de linha preta de espaçamento (tile `0x1F` preto puro) na linha 2 da tela entre o cabeçalho de 16px e a listagem de jogos (linha 3), eliminando sobreposição visual e mantendo leitura agradável.
 * 🔥 **Banners Gráficos de Topo por Tema (Theme Headers):**
   * Banner padrão oficial: **RETROGAMER POA** flame banner (inspirado nos temas de referência do EverDrive MD customizado por opssemnik).
-  * Cada um dos 9 temas possui seu banner gráfico dedicado de 256x16 pixels de alta fidelidade:
+  * Todos os 9 temas com cabeçalhos gráficos dedicados de 256x16 pixels de alta fidelidade:
     1. **RETROGAMER POA** (Banner com chamas e logo flamejante)
     2. **PADRÃO** (Visual clássico EverDrive azul e branco)
     3. **SYNTHWAVE** (Grade retrô neon magenta e ciano)
@@ -107,20 +112,22 @@ Versão oficial atualizada da tradução completa do Sistema Operacional do flas
     7. **MAD DRUGA** (Tema gamer verde e preto)
     8. **CYBERPUNK** (Visual futurista neon e sombras)
     9. **GAME BOY DMG** (Nostalgia clássica monocromática verde)
-  * Espaço dedicado nas duas primeiras linhas da tela (16 pixels) com separação visual perfeita em relação à listagem de jogos (que se inicia na linha 3).
 * 🎨 **Seletor de Temas Integrado em Tempo Real (In-System Hotkeys):**
   * Pressione **`SELECT` + `DIREITA`** a qualquer momento no menu para avançar para o próximo tema e banner.
   * Pressione **`SELECT` + `ESQUERDA`** para retornar ao tema anterior.
   * Troca instantânea na tela da sua TV sem reiniciar o console!
-* 🛠️ **Arquitetura Glitch-Free e Sem Corrupção:**
-  * Tiles dos banners alocados em slots CHR livres sem colidir com fontes, caracteres cirílicos ou mappers.
+* 🛠️ **Arquitetura Glitch-Free e Pacote de 96 Bytes de Nametable:**
+  * Gerenciamento atômico de nametable expandida para 96 bytes por tema (linha 0 e 1 de banner + linha 2 de respiro preto).
+  * Tiles dos banners alocados em 41 slots CHR livres (`0x0B..0x1E` e `0x8B..0x9F`) sem colidir com fontes, caracteres cirílicos ou mappers.
   * Atualização atômica direta de paleta PPU e CHR-RAM com sincronização de scanlines.
   * Margem de segurança de hardware estritamente abaixo do limite de $FC00 (CPLD MAX II BIOS safe boundary).
 * 💾 **Persistência de Tema ao Reiniciar / Ligar (SRAM & CONFIG.DAT):**
   * O último tema e banner selecionado é gravado na SRAM do cartucho e restaurado automaticamente ao reiniciar o console!
   * Arquivo container `CONFIG.DAT` incluso para persistência contínua.
 * 🕹️ **Aplicativo Interativo de Temas (`TEMAS.NES` / `EDFC/THEMES.NES`):**
-  * ROM interativa de demonstração (Mapper 0 / NROM) inclusa para testes diretos no console ou emuladores.
+  * ROM interativa de demonstração (Mapper 0 / NROM) inclusa e atualizada para testes diretos no console ou emuladores.
+* 🧰 **Suite de Ferramentas de Banners no Repositório:**
+  * Incluídos scripts `convert_banner.py`, `patch_font_and_strings.py`, `test_banner_complete.py` e teste de regressão automatizada `verify_banner_and_characters.py`.
 
 ---
 

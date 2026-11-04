@@ -16,6 +16,7 @@ Disponibilizamos versões pré-empacotadas prontas para uso direto no cartão Mi
 * **Compatibilidade:** Cartuchos EverDrive N8 clone (ex: AliExpress `Drive-N8 V3.1 2024.07` com Cyclone II `EP2C5T144C8N` e CPLD MAX II `EPM240`).
 * **Características:**
   * **Banners Gráficos de Topo:** Header visual temático nas duas primeiras linhas (256x16 pixels) com o banner oficial **RETROGAMER POA** como padrão.
+  * **Espaçamento e Caracteres Acentuados Otimizados:** Linha 2 com respiro visual dedicado e fontes acentuadas PT-BR (`Opções`, `Trapaças`, etc.) 100% nítidas sem conflito com os gráficos do cabeçalho.
   * **Seletor de Temas Integrado ao Vivo:** Alterne temas a qualquer momento com as teclas de atalho **`SELECT` + `DIREITA`** e **`SELECT` + `ESQUERDA`**.
   * **Persistência na SRAM:** O tema selecionado é memorizado na memória estática do cartucho e restaurado automaticamente ao reiniciar.
   * 100% livre de tela cinza ao iniciar jogos (núcleos FPGA `.RBF` originais restaurados).
