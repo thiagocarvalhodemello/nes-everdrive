@@ -121,6 +121,29 @@ O `OS.BIN` inclui 9 temas com banner gráfico, alternáveis direto no console. C
 | ![OUTRUN](docs/screenshots/theme3_outrun.png)<br>**3 · OUTRUN** | ![SEGA 16-BIT](docs/screenshots/theme4_sega_16_bit.png)<br>**4 · SEGA 16-BIT** | ![RETROCHIMP](docs/screenshots/theme5_retrochimp.png)<br>**5 · RETROCHIMP** |
 | ![MAD DRUGA](docs/screenshots/theme6_mad_druga.png)<br>**6 · MAD DRUGA** | ![CYBERPUNK](docs/screenshots/theme7_cyberpunk.png)<br>**7 · CYBERPUNK** | ![GAME BOY](docs/screenshots/theme8_game_boy.png)<br>**8 · GAME BOY** |
 
+### 🖼️ Capas dos Jogos na Tela "Info da ROM"
+
+Ao abrir **Menu Arquivo → Info da ROM**, o sistema mostra a capa do jogo (64×96 px, 48 sprites 8×16, 4 paletas de 3 cores) ao lado da janela de informações:
+
+![Capa na Info da ROM](docs/screenshots/rom_info_art_test.png)
+
+* **Identificação pelo conteúdo, não pelo nome:** o console calcula o CRC-32 dos bytes 512–2559 da ROM e procura `EDFC/ARTS/<CRC>.BIN` no cartão (a pasta tem 4 letras porque o OS compara nomes de pasta com exatamente 4 caracteres). Traduções, revisões e a maioria dos hacks compartilham a capa do jogo original.
+* **Seguro para o cartão SD:** a leitura usa a API de arquivos do próprio OS, no laço principal, direto para a CHR-RAM (`$1000`, tabela não usada pelo OS). Nada é escrito no cartão nem na RAM de trabalho do OS.
+* **Sem capa?** A janela funciona exatamente como antes.
+
+#### Gerar e instalar as capas (PC)
+```bash
+# 1. Baixa todas as capas do libretro-thumbnails + DAT No-Intro e converte para o formato NES
+#    (downloads em paralelo + conversão em todos os núcleos; retoma de onde parou)
+python tools/art_pack.py build                       # -> releases/EDFC-ARTPACK-NES.zip
+
+# 2. Identifica cada ROM do cartão pelo CRC (No-Intro) ou pelo nome (GoodNES/No-Intro)
+#    e grava EDFC/ARTS/<CRC>.BIN
+python tools/art_pack.py install --sd E:\ --dry-run  # relatório
+python tools/art_pack.py install --sd E:\            # instala
+```
+As capas são de terceiros (libretro-thumbnails) e servem apenas para uso pessoal; o pacote não é distribuído neste repositório.
+
 ### 🕹️ Como Mudar o Tema
 
 #### Método 1: Troca Dinâmica em Tempo Real no Console (Atalhos de Controle) ⭐ NOVO!

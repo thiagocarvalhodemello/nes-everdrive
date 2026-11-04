@@ -24,3 +24,6 @@ __pycache__/
 WhatsApp*
 releases/
 
+
+# Box-art pack cache (converted libretro thumbnails, not redistributed)
+.artcache/

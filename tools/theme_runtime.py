@@ -41,21 +41,24 @@ _OPS = {
     "ASL": {"imp": 0x0A},
     "BCC": {"rel": 0x90}, "BCS": {"rel": 0xB0}, "BEQ": {"rel": 0xF0},
     "BMI": {"rel": 0x30}, "BNE": {"rel": 0xD0}, "BPL": {"rel": 0x10},
-    "BIT": {"abs": 0x2C},
-    "CMP": {"imm": 0xC9, "abs": 0xCD}, "CPY": {"imm": 0xC0},
+    "BIT": {"abs": 0x2C}, "CLC": {"imp": 0x18}, "SEC": {"imp": 0x38},
+    "CMP": {"imm": 0xC9, "abs": 0xCD}, "CPX": {"imm": 0xE0}, "CPY": {"imm": 0xC0},
     "DEC": {"abs": 0xCE}, "DEX": {"imp": 0xCA}, "DEY": {"imp": 0x88},
-    "EOR": {"imm": 0x49, "abs": 0x4D},
+    "EOR": {"imm": 0x49, "zp": 0x45, "abs": 0x4D},
     "INC": {"abs": 0xEE}, "INX": {"imp": 0xE8}, "INY": {"imp": 0xC8},
     "JMP": {"abs": 0x4C}, "JSR": {"abs": 0x20},
-    "LDA": {"imm": 0xA9, "zp": 0xA5, "abs": 0xAD, "abx": 0xBD, "aby": 0xB9},
+    "LDA": {"imm": 0xA9, "zp": 0xA5, "abs": 0xAD, "abx": 0xBD, "aby": 0xB9, "indy": 0xB1},
     "LDX": {"imm": 0xA2, "abs": 0xAE}, "LDY": {"imm": 0xA0},
-    "ORA": {"imm": 0x09},
+    "LSR": {"imp": 0x4A, "zp": 0x46},
+    "ORA": {"imm": 0x09, "abs": 0x0D},
     "PHA": {"imp": 0x48}, "PLA": {"imp": 0x68},
+    "ROR": {"zp": 0x66},
     "RTI": {"imp": 0x40}, "RTS": {"imp": 0x60},
     "STA": {"zp": 0x85, "abs": 0x8D, "abx": 0x9D, "aby": 0x99},
+    "STX": {"abs": 0x8E},
     "TAX": {"imp": 0xAA}, "TAY": {"imp": 0xA8}, "TXA": {"imp": 0x8A}, "TYA": {"imp": 0x98},
 }
-_SIZE = {"imp": 1, "imm": 2, "zp": 2, "rel": 2, "abs": 3, "abx": 3, "aby": 3}
+_SIZE = {"imp": 1, "imm": 2, "zp": 2, "rel": 2, "indy": 2, "abs": 3, "abx": 3, "aby": 3}
 
 
 def assemble(listing, base, symbols=None):
@@ -78,12 +81,13 @@ def assemble(listing, base, symbols=None):
     out = bytearray()
     pc = base
     for lbl, mn, mode, arg in listing:
+        env["_pc"] = pc
         out.append(_OPS[mn][mode])
         if mode == "rel":
             rel = val(arg) - (pc + 2)
             assert -128 <= rel <= 127, f"branch out of range to {arg}"
             out.append(rel & 0xFF)
-        elif mode in ("imm", "zp"):
+        elif mode in ("imm", "zp", "indy"):
             v = val(arg)
             assert 0 <= v <= 0xFF, f"byte operand out of range: {arg}"
             out.append(v)
@@ -117,7 +121,7 @@ OS_REFRESH_NT = 0x8343         # uploads nametable shadow $6000-$63FF to PPU
 OS_DECSP2 = 0xEF47             # first instruction of $ABBD (USB poll in idle loops)
 OS_JOY = 0x0484                # joypad byte written by the NMI handler
 OS_VRAM_BUSY = 0xA2            # nonzero while OS streams VRAM in NMI-sensitive loop
-B11_LOADER = 0x7F00            # bank $0B: palette + CHR tile loader
+B11_LOADER = 0x7BC0            # bank $0B: palette + CHR tile loader
 B11_PTRS = 0x6000              # bank $0B: per-theme package pointer table
 
 BTN_NEXT = 0x21                # SELECT + RIGHT
@@ -129,11 +133,14 @@ HOOK_NMI = 0x8103              # orig: LDA $2002 / PLA / RTI   -> JMP LIVE / NOP
 HOOK_BOOT = 0x828C             # orig: JSR $83B0               -> JSR BOOT
 HOOK_BANNER = 0x83F9           # orig: LDA #$60 / STA $93 / RTS -> JMP BANNER / NOP / NOP
 HOOK_IDLE = 0xABBD             # orig: JSR $EF47               -> JSR IDLE
+HOOK_ART = 0xCFB2              # orig: JSR $9F6C (ROM info wait) -> JSR ART_HOOK
+ART_ENTRY = 0x7C90             # art_runtime.ART_MAIN (bank $0B)
 HOOK_KEYSTREAM = {
     HOOK_NMI: bytes([0x9E, 0xFB, 0x89, 0xEF, 0x60]),
     HOOK_BOOT: bytes([0x2F, 0xC7, 0x0A]),
     HOOK_BANNER: bytes([0xB6, 0x4E, 0x17, 0x3E, 0x38]),
     HOOK_IDLE: bytes([0x00, 0x00, 0x00]),        # bank 13 is stored in plaintext
+    HOOK_ART: bytes([0x00, 0x00, 0x00]),         # bank 14 too
 }
 
 
@@ -288,6 +295,13 @@ def build_runtime():
         (None, "JMP", "abs", OS_DECSP2),
     ]
 
+    # --- Hook 5: ROM info popup button wait ($CFB2). Main context; the art
+    # runtime in bank $0B (see art_runtime.py) takes over and returns via its
+    # RAM trampoline with bank 8 mapped again.
+    L += _map(0x0B)
+    L[-4] = ("ART_HOOK",) + L[-4][1:]
+    L += [(None, "JMP", "abs", ART_ENTRY)]
+
     code, labels = assemble(L, CODE_START)
     end = CODE_START + len(code)
     assert end <= REGION_START + REGION_LEN, \
@@ -308,6 +322,7 @@ def hook_plaintexts(labels):
         HOOK_BOOT: bytes([0x20, labels["BOOT"] & 0xFF, labels["BOOT"] >> 8]),
         HOOK_BANNER: bytes([0x4C, labels["BANNER"] & 0xFF, labels["BANNER"] >> 8, 0xEA, 0xEA]),
         HOOK_IDLE: bytes([0x20, labels["IDLE"] & 0xFF, labels["IDLE"] >> 8]),
+        HOOK_ART: bytes([0x20, labels["ART_HOOK"] & 0xFF, labels["ART_HOOK"] >> 8]),
     }
 
 

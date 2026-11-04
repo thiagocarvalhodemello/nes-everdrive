@@ -3,6 +3,8 @@ import os, sys, struct, zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from edfc_emu import EverDriveN8Emu, save_png, NES_PALETTE
 from test_banner_complete import build_banner_packages, THEMES_DEF
+from theme_runtime import B11_LOADER
+from art_runtime import ART_MAIN, install_into_bank11
 
 # Opcode dictionary for assembler
 op_bytes = {
@@ -65,6 +67,10 @@ def assemble_listing(listing, base_addr):
 # -----------------------------------------------------------------
 # 1. BUILD BANK 0x0B DATA & ROUTINE
 # -----------------------------------------------------------------
+# Bank $0B layout: theme packages | palette table | theme loader | art runtime
+PAL_TABLE = 0x7B90
+LOADER = B11_LOADER          # $7BC0
+
 def build_bank11_image(packages):
     b11 = bytearray(0x2000) # 8192 bytes
     
@@ -93,15 +99,15 @@ def build_bank11_image(packages):
         b11[ptr_offset + i*2 + 1] = (ptr >> 8) & 0xFF
         
     print(f"Bank 0x0B theme data ends at offset 0x{data_offset:04X} (CPU: ${0x6000+data_offset:04X})")
-    assert data_offset <= 0x1E00, "Theme data exceeds Bank 0x0B space!"
+    assert data_offset <= PAL_TABLE - 0x6000, "Theme data exceeds Bank 0x0B space!"
 
-    # Palette table in Bank 0x0B at $7E00 (offset 0x1E00) - 36 bytes
-    pal_table_offset = 0x1E00
-    pal_table_cpu = 0x7E00
+    # Palette table (36 bytes) right after the theme packages
+    pal_table_offset = PAL_TABLE - 0x6000
+    pal_table_cpu = PAL_TABLE
     for i, (_, _, _, pal0, _) in enumerate(THEMES_DEF):
         b11[pal_table_offset + i*4 : pal_table_offset + i*4 + 4] = pal0
 
-    # LOAD_THEME Routine in Bank 0x0B at $7F00 (offset 0x1F00)
+    # LOAD_THEME routine at LOADER (address shared with theme_runtime.B11_LOADER)
     # A = theme_id
     loader_listing = [
         ("LOAD_THEME", "PHA", None),
@@ -232,10 +238,11 @@ def build_bank11_image(packages):
         (None, "PLA", None),
         (None, "RTS", None)
     ]
-    loader_code = assemble_listing(loader_listing, 0x7F00)
-    print(f"Bank 0x0B loader size: {len(loader_code)} bytes ($7F00..${0x7F00+len(loader_code):04X})")
-    assert len(loader_code) <= 256, "Loader exceeds page!"
-    b11[0x1F00 : 0x1F00 + len(loader_code)] = loader_code
+    loader_code = assemble_listing(loader_listing, LOADER)
+    print(f"Bank 0x0B loader size: {len(loader_code)} bytes (${LOADER:04X}..${LOADER+len(loader_code):04X})")
+    assert LOADER + len(loader_code) <= ART_MAIN, "Loader overlaps the art runtime!"
+    b11[LOADER - 0x6000 : LOADER - 0x6000 + len(loader_code)] = loader_code
+    install_into_bank11(b11)
     return b11
 
 # -----------------------------------------------------------------

@@ -90,8 +90,8 @@ def build_fat16_image(root_dir):
 
     def make_sfn(name):
         base, ext = os.path.splitext(name)
-        base = "".join(c for c in base.upper() if c.isalnum() or c in "_-")[:8].ljust(8)
-        ext = "".join(c for c in ext[1:].upper() if c.isalnum() or c in "_-")[:3].ljust(3)
+        base = "".join(c for c in base.upper() if c.isascii() and (c.isalnum() or c in "_-"))[:8].ljust(8)
+        ext = "".join(c for c in ext[1:].upper() if c.isascii() and (c.isalnum() or c in "_-"))[:3].ljust(3)
         return (base + ext).encode("ascii")
 
     def make_dir_entry(name_11, attr, cluster, size):
@@ -104,11 +104,55 @@ def build_fat16_image(root_dir):
         struct.pack_into("<I", ent, 28, size)
         return ent
 
+    def is_plain_83(name):
+        base, ext = os.path.splitext(name)
+        ok = lambda s: all(c.isalnum() or c in "_-" for c in s) and s == s.upper()
+        return 0 < len(base) <= 8 and len(ext) <= 4 and ok(base) and ok(ext[1:])
+
+    def make_sfn_unique(name, used):
+        sfn = make_sfn(name)
+        if is_plain_83(name):
+            used.add(sfn)
+            return sfn
+        base, ext = sfn[:8].rstrip(), sfn[8:]
+        for n in range(1, 1000):
+            tail = b"~" + str(n).encode()
+            cand = (base[:8 - len(tail)] + tail).ljust(8) + ext
+            if cand not in used:
+                used.add(cand)
+                return cand
+        raise ValueError("too many SFN collisions")
+
+    def lfn_entries(name, sfn11):
+        """VFAT long-name entries (to be placed before the 8.3 entry)."""
+        csum = 0
+        for b in sfn11:
+            csum = (((csum & 1) << 7) + (csum >> 1) + b) & 0xFF
+        u = name.encode("utf-16-le") + b"\x00\x00"
+        chunks = [u[i:i + 26] for i in range(0, len(u), 26)]
+        chunks[-1] = chunks[-1].ljust(26, b"\xff")
+        out = bytearray()
+        for seq in range(len(chunks), 0, -1):
+            c = chunks[seq - 1]
+            e = bytearray(32)
+            e[0] = seq | (0x40 if seq == len(chunks) else 0)
+            e[1:11], e[11], e[13] = c[0:10], 0x0F, csum
+            e[14:26], e[28:32] = c[10:22], c[22:26]
+            out += e
+        return out
+
+    def named_entry(item, attr, cluster, size, used):
+        sfn = make_sfn_unique(item, used)
+        pre = b"" if is_plain_83(item) else lfn_entries(item, sfn)
+        return pre + make_dir_entry(sfn, attr, cluster, size)
+
     def populate_dir(fs_path, parent_cluster, is_root=False):
         entries = bytearray()
+        used = set()
         my_cluster = next_cluster if not is_root else 0
         if not is_root:
-            my_cluster = alloc_clusters(bytes(sectors_per_cluster * 512))
+            # 8 clusters = 256 entries, room for long-name entries
+            my_cluster = alloc_clusters(bytes(8 * sectors_per_cluster * 512))
             entries += make_dir_entry(b".          ", 0x10, my_cluster, 0)
             entries += make_dir_entry(b"..         ", 0x10, parent_cluster, 0)
         for item in sorted(os.listdir(fs_path)):
@@ -117,13 +161,13 @@ def build_fat16_image(root_dir):
             full = os.path.join(fs_path, item)
             if os.path.isdir(full):
                 sub_c = populate_dir(full, my_cluster, is_root=False)
-                entries += make_dir_entry(make_sfn(item), 0x10, sub_c, 0)
+                entries += named_entry(item, 0x10, sub_c, 0, used)
             elif os.path.isfile(full):
                 raw = open(full, "rb").read()
                 if len(raw) == 0:
                     continue
                 fc = alloc_clusters(raw)
-                entries += make_dir_entry(make_sfn(item), 0x20, fc, len(raw))
+                entries += named_entry(item, 0x20, fc, len(raw), used)
         if is_root:
             img[root_lba*512:root_lba*512+len(entries)] = entries
             return 0
@@ -234,6 +278,8 @@ class EverDriveN8Emu:
         self.chr_ram = bytearray(0x2000)
         self.vram = bytearray(0x1000)
         self.palette = bytearray(0x20)
+        self.oam = bytearray(256)
+        self.oam_addr = 0
         self.ppu_ctrl = 0
         self.ppu_mask = 0
         self.ppu_status = 0x80
@@ -330,6 +376,11 @@ class EverDriveN8Emu:
                 self.ppu_ctrl = val
             elif reg == 0x2001:
                 self.ppu_mask = val
+            elif reg == 0x2003:
+                self.oam_addr = val
+            elif reg == 0x2004:
+                self.oam[self.oam_addr] = val
+                self.oam_addr = (self.oam_addr + 1) & 0xFF
             elif reg == 0x2005:
                 self.ppu_latch = not self.ppu_latch
             elif reg == 0x2006:
@@ -351,6 +402,10 @@ class EverDriveN8Emu:
                     self.palette[pa] = val
                 inc = 32 if (self.ppu_ctrl & 0x04) else 1
                 self.ppu_addr = (self.ppu_addr + inc) & 0x3FFF
+        elif addr == 0x4014:
+            page = val << 8
+            for k in range(256):
+                self.oam[(self.oam_addr + k) & 0xFF] = self.read(page + k)
         elif addr == 0x4016:
             if (self.joy_strobe & 1) and not (val & 1):
                 self.joy_shift = int(f"{self.joy_state & 0xFF:08b}"[::-1], 2)
@@ -737,6 +792,8 @@ class EverDriveN8Emu:
                         else:
                             nes_col = self.palette[pal_idx * 4 + c_low] & 0x3F
                         grid[ty * 8 + py][tx * 8 + px] = NES_PALETTE[nes_col]
+        if self.ppu_mask & 0x10:
+            self._render_sprites(grid)
         rgb_rows = []
         for y in range(240):
             row_bytes = bytearray()
@@ -747,6 +804,29 @@ class EverDriveN8Emu:
             for _ in range(scale):
                 rgb_rows.append(bytes(row_bytes))
         save_png(out_path, 256 * scale, 240 * scale, rgb_rows)
+
+    def _render_sprites(self, grid):
+        tall = bool(self.ppu_ctrl & 0x20)
+        for n in range(63, -1, -1):             # lower index drawn last = on top
+            y, tile, attr, x = self.oam[n*4:n*4+4]
+            y += 1
+            if y >= 240:
+                continue
+            if tall:
+                table, tile = (0x1000 if tile & 1 else 0), tile & 0xFE
+            else:
+                table = 0x1000 if self.ppu_ctrl & 0x08 else 0
+            pal = 0x10 + (attr & 3) * 4
+            for py in range(16 if tall else 8):
+                sy = py if not (attr & 0x80) else (15 if tall else 7) - py
+                t = tile + (sy >> 3)
+                off = table + t * 16 + (sy & 7)
+                p0, p1 = self.chr_ram[off], self.chr_ram[off + 8]
+                for px in range(8):
+                    bit = 7 - px if not (attr & 0x40) else px
+                    c = ((p0 >> bit) & 1) | (((p1 >> bit) & 1) << 1)
+                    if c and 0 <= y + py < 240 and x + px < 256:
+                        grid[y + py][x + px] = NES_PALETTE[self.palette[pal + c] & 0x3F]
 
     def dump_screen_text(self):
         accent_map = {
