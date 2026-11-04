@@ -105,7 +105,7 @@ python tools/test_theme_safety.py      # testes no emulador do projeto
 python tools/test_game_art.py
 ```
 
-Detalhes técnicos (endereços, hooks, uso de memória) estão nos cabeçalhos de `tools/theme_runtime.py` e `tools/art_runtime.py`.
+Guia para quem for manter o projeto (pessoas ou agentes de IA): [`AGENTS.md`](AGENTS.md), com arquitetura, receitas e histórico de bugs em [`docs/dev/`](docs/dev/).
 
 ---
 
