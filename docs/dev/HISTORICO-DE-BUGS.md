@@ -12,6 +12,12 @@
 | v1.5 (dev) | Emulador mostrava lista lixo | Construtor FAT do emulador estourava diretórios grandes (`.artcache` com 13 mil nomes) | Diretórios dimensionados pelo nº de entradas; ignorar pastas ocultas | Quando o teste falha de forma estranha, desconfie primeiro do emulador |
 
 Pendências conhecidas
+- **v1.5: corrupção visual aleatória** ao sair do menu do jogo ou entrar em pasta (sair e voltar corrige),
+  só no hardware. Descartado no emulador: escritas no PPU fora do vblank (`ppu_timing.py`: 0), OS
+  dependendo do índice `$4400` deixado pelo nosso código (0), uso de `$6400` por outra rotina (nenhum),
+  página `$0300` (intacta). Suspeita: placa clone sensível a escritas no registrador de banco `$81` com a
+  tela ligada (o banner faz 128 por limpeza de tela). Em teste com 3 OS.BIN de diagnóstico (A completo,
+  B sem capas, C sem capas e sem banner na limpeza de tela).
 - As correções de timing/PPU não são verificáveis no emulador; confirmar no hardware a cada release.
 - Ao abrir o menu do jogo a tela fica apagada ~0,3 s (leitura + CRC de 2 KB via PPU).
 - A janela do menu do jogo ainda se chama "Menu Arquivo" (string compartilhada com os menus de `.SAV`/`.TXT`).

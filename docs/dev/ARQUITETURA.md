@@ -137,3 +137,7 @@ Atributos `$63C0–$63C7 = $05`: linhas 0–1 usam a paleta 1 (= cores do tema: 
 - Sem tempo de PPU real (espera de vblank é acelerada), sem decaimento de OAM, sem conflitos
   de escrita durante a renderização. **Bugs de timing não aparecem aqui.**
 - Pastas ocultas, `releases/` e `sdcard/` são ignoradas ao montar o cartão a partir do repo.
+- `tools/ppu_timing.py` (`TimedEmu`) é um modo com tempo aproximado (29.780 ciclos/quadro, vblank de
+  2.273 ciclos, NMI real, leitura de `$2002` como no hardware, setor de SD = 16.000 ciclos) que lista
+  escritas no PPU fora do vblank com a tela ligada (`emu.unsafe`). Segure botões ≥ 8 quadros nele: o OS
+  só lê o controle depois de cada espera de vblank.
