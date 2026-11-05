@@ -13,18 +13,46 @@ build_banner_packages() returns, per theme:
 """
 import os
 
-# id, name, banner title, pal0 = (bd, txt, hl, sh)
+# id, name, banner title, pal0 = (bd, txt, hl, sh) — NES colours, as the theme loader uses them:
+#   file list (palette 0): 1 = txt (file names), 2 = hl (LIST BACKGROUND), 3 = sh (folders/selection)
+#   popups / status bar (palette 3): background = sh, text = white $30, highlight = hl
+#   banner (palette 1): 0 = bd, 1 = sh, 2 = txt, 3 = hl
+# So hl must be light and txt/sh dark. check_contrast() enforces it (CIE L* differences):
+# v1.5 shipped PADRAO/SYNTHWAVE/CYBERPUNK/RETROCHIMP with text ~4-8 L* from the
+# background, which a TV smears into unreadable fragments (looked like corruption).
 THEMES = [
-    (0, "RETROGAMER POA", "RETROGAMER POA", (0x0F, 0x27, 0x38, 0x16)),
-    (1, "PADRAO",         "EVERDRIVE N8",   (0x0F, 0x10, 0x28, 0x00)),
-    (2, "SYNTHWAVE",      "SYNTHWAVE",      (0x0F, 0x24, 0x2C, 0x12)),
-    (3, "OUTRUN",         "OUTRUN",         (0x04, 0x27, 0x37, 0x16)),
-    (4, "16-BIT",         "16-BIT",         (0x02, 0x21, 0x30, 0x11)),
-    (5, "RETROCHIMP",     "RETROCHIMP",     (0x0F, 0x2A, 0x38, 0x09)),
-    (6, "MAD DRUGA",      "MAD DRUGA",      (0x0F, 0x23, 0x30, 0x13)),
-    (7, "CYBERPUNK",      "CYBERPUNK",      (0x02, 0x2C, 0x24, 0x12)),
+    (0, "RETROGAMER POA", "RETROGAMER POA", (0x0F, 0x17, 0x38, 0x16)),
+    (1, "PADRAO",         "EVERDRIVE N8",   (0x0F, 0x00, 0x30, 0x02)),
+    (2, "SYNTHWAVE",      "SYNTHWAVE",      (0x0F, 0x14, 0x3C, 0x12)),
+    (3, "OUTRUN",         "OUTRUN",         (0x04, 0x17, 0x37, 0x16)),
+    (4, "16-BIT",         "16-BIT",         (0x02, 0x01, 0x30, 0x11)),
+    (5, "RETROCHIMP",     "RETROCHIMP",     (0x0F, 0x0A, 0x38, 0x19)),
+    (6, "MAD DRUGA",      "MAD DRUGA",      (0x0F, 0x04, 0x30, 0x13)),
+    (7, "CYBERPUNK",      "CYBERPUNK",      (0x02, 0x0C, 0x34, 0x12)),
     (8, "GAME BOY",       "GAME BOY",       (0x08, 0x19, 0x38, 0x0A)),
 ]
+MIN_CONTRAST = 40          # L* between list text/selection and list background
+MIN_POPUP_CONTRAST = 45    # L* between white popup text and popup background (sh)
+
+
+def _lstar(c):
+    from nes_art import NES_RGB
+    r, g, b = [x / 255 for x in NES_RGB[c]]
+    f = lambda v: ((v + 0.055) / 1.055) ** 2.4 if v > 0.04045 else v / 12.92
+    y = 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+    return 116 * (y ** (1 / 3) if y > 0.008856 else 7.787 * y + 16 / 116) - 16
+
+
+def check_contrast():
+    bad = []
+    for tid, name, _, (bd, txt, hl, sh) in THEMES:
+        if abs(_lstar(txt) - _lstar(hl)) < MIN_CONTRAST:
+            bad.append(f"{name}: file text vs list background")
+        if abs(_lstar(sh) - _lstar(hl)) < MIN_CONTRAST:
+            bad.append(f"{name}: folders/selection vs list background")
+        if _lstar(0x30) - _lstar(sh) < MIN_POPUP_CONTRAST:
+            bad.append(f"{name}: popup text vs popup background")
+    assert not bad, "unreadable theme colours: " + "; ".join(bad)
 
 # CHR slots the OS font leaves free (control-code slots of both font halves)
 FREE_SLOTS = list(range(0x0B, 0x1F)) + list(range(0x8B, 0xA0))
@@ -67,7 +95,7 @@ def _canvas():
 
 
 def _title(px, text, x0):
-    """Draw text in 8-px cells starting at x0: bold 6x14 glyphs, hl top, txt bottom, shadow."""
+    """Draw text in 8-px cells starting at x0: bold 6x14 glyphs in hl (the light colour), shadow sh."""
     for i, ch in enumerate(text):
         g = FONT5x7[ch]
         cx = x0 + i * 8
@@ -82,7 +110,7 @@ def _title(px, text, x0):
             if (x + 1, y + 1) not in body and x + 1 < W and y + 1 < H:
                 px[y + 1][x + 1] = 1
         for (x, y) in body:
-            px[y][x] = 3 if y < 8 else 2
+            px[y][x] = 3
 
 
 def _title_x(text):
@@ -106,14 +134,14 @@ def deco_flames(x, y):                       # RETROGAMER POA: flames rising fro
 
 
 def deco_lines(x, y):                        # PADRAO: classic double rule
-    return {1: 2, 3: 1, 12: 1, 14: 2}.get(y)
+    return {1: 3, 3: 1, 12: 1, 14: 3}.get(y)
 
 
 def deco_grid(x, y):                         # SYNTHWAVE: horizon + grid
     if y in (7,):
         return 3
     if y > 7 and (y in (10, 14) or (x % 8 == 0)):
-        return 2
+        return 1
     if y < 7 and (x % 16) in (6, 7, 8, 9) and y > 2:
         return 1
     return None
@@ -126,7 +154,7 @@ def deco_sunset(x, y):                       # OUTRUN: sunset bands
 def deco_scan(x, y):                         # 16-BIT: chequered scanlines
     if y % 4 == 3:
         return 1
-    return 2 if ((x // 4) + (y // 4)) % 2 == 0 else None
+    return 3 if ((x // 4) + (y // 4)) % 2 == 0 else None
 
 
 def deco_stars(x, y):                        # RETROCHIMP: twinkling stars
@@ -134,19 +162,19 @@ def deco_stars(x, y):                        # RETROCHIMP: twinkling stars
     if (sx, sy) in ((4, 3), (12, 6)):
         return 3
     if (sx, sy) in ((3, 3), (5, 3), (4, 2), (4, 4)):
-        return 2
+        return 1
     return 1 if y == 15 else None
 
 
 def deco_hazard(x, y):                       # MAD DRUGA: hazard stripes
     if y in (0, 15):
         return 1
-    return 3 if ((x + y) // 4) % 2 == 0 else 2
+    return 3 if ((x + y) // 4) % 2 == 0 else 1
 
 
 def deco_circuit(x, y):                      # CYBERPUNK: circuit traces
     if y == 4 or y == 11:
-        return 2
+        return 1
     if x % 16 == 5 and 4 <= y <= 11:
         return 3
     if (x % 16, y) in ((4, 3), (5, 3), (6, 3), (4, 12), (5, 12), (6, 12)):
@@ -208,6 +236,7 @@ def package(theme_id):
 
 
 def build_banner_packages():
+    check_contrast()
     return [package(t[0]) for t in THEMES]
 
 

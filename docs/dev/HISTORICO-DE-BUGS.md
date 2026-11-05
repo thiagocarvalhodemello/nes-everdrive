@@ -9,15 +9,10 @@
 | v1.4 (dev) | Lista mostrava arquivos da pasta `ARTS` após ver uma capa | Buscas `$AD3B/$9DC7` mudam o diretório atual do FAT | Reabrir `$8278` (pasta do navegador) com `$8DA9` | Restaurar todo estado global que as chamadas do OS alteram |
 | v1.4 (dev) | Pasta `ART` nunca encontrada | `$AD3B` compara exatamente 4 caracteres | Pasta `ARTS` | Ler a rotina antes de assumir semântica de nomes |
 | v1.4 (dev) | Segunda leitura de setores recomeçava do início (no emulador) | O SD falso do emulador recarrega o LBA a cada chamada | Ler tudo numa única chamada `$9541` | Separar limitação do emulador de comportamento do hardware |
+| v1.2–v1.5 | Lista de **arquivos** "corrompida" (letras em pedaços ou sumindo) em alguns temas; pastas e banner normais; parecia aleatório | Não era memória: **contraste de paleta**. A lista usa a cor 2 da paleta 0 como fundo e o tema punha ali a cor `hl`; em PADRÃO/SYNTHWAVE/CYBERPUNK/RETROCHIMP texto e fundo tinham 4–8 L* de diferença e a TV borrava as letras. Pastas usam a fonte destacada (outra cor), por isso a raiz ficava legível | Paletas refeitas (≥ 40 L*) e `banner_art.check_contrast()` no build | Antes de caçar corrupção, peça vídeo/foto e compare fonte normal × destacada; reproduza no emulador com uma pasta de **arquivos** em cada tema |
 | v1.5 (dev) | Emulador mostrava lista lixo | Construtor FAT do emulador estourava diretórios grandes (`.artcache` com 13 mil nomes) | Diretórios dimensionados pelo nº de entradas; ignorar pastas ocultas | Quando o teste falha de forma estranha, desconfie primeiro do emulador |
 
 Pendências conhecidas
-- **v1.5: corrupção visual aleatória** ao sair do menu do jogo ou entrar em pasta (sair e voltar corrige),
-  só no hardware. Descartado no emulador: escritas no PPU fora do vblank (`ppu_timing.py`: 0), OS
-  dependendo do índice `$4400` deixado pelo nosso código (0), uso de `$6400` por outra rotina (nenhum),
-  página `$0300` (intacta). Suspeita: placa clone sensível a escritas no registrador de banco `$81` com a
-  tela ligada (o banner faz 128 por limpeza de tela). Em teste com 3 OS.BIN de diagnóstico (A completo,
-  B sem capas, C sem capas e sem banner na limpeza de tela).
 - As correções de timing/PPU não são verificáveis no emulador; confirmar no hardware a cada release.
 - Ao abrir o menu do jogo a tela fica apagada ~0,3 s (leitura + CRC de 2 KB via PPU).
 - A janela do menu do jogo ainda se chama "Menu Arquivo" (string compartilhada com os menus de `.SAV`/`.TXT`).

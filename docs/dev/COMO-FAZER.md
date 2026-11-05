@@ -16,6 +16,10 @@ mudado código, algo está errado.
 1. `tools/banner_art.py`: `THEMES` (id, nome, texto do banner, `pal0 = (bd, txt, hl, sh)` em cores NES)
    e `DECOS` (função de decoração por tema, desenha com as cores 0–3). A fonte 5×7 (`FONT5x7`) só tem
    os caracteres usados — acrescente os que faltarem.
+   **Papéis das cores** (`pal0 = (bd, txt, hl, sh)`): na lista de arquivos `hl` é o **fundo**, `txt` o nome
+   dos arquivos e `sh` pastas/seleção; nas janelas e na barra de status `sh` é o fundo do texto branco.
+   Logo `hl` claro, `txt`/`sh` escuros. O build recusa paletas com pouco contraste (`check_contrast`).
+   Confira sempre uma pasta com **arquivos** (fonte normal), não só a raiz (pastas usam a fonte destacada).
 2. `python tools/banner_art.py` mostra quantos tiles cada banner usa e grava prévias em
    `docs/themes/banners/`. Limite: `MAX_TILES = 39` por banner (slots livres da fonte).
 3. Tema novo (10º): ajuste também `NUM_THEMES` em `tools/theme_runtime.py`. Confira o espaço: o
