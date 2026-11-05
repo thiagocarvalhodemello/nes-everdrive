@@ -13,17 +13,19 @@ Rodar o install duas vezes não muda nada; se `git diff EDFC/OS.BIN` mostrar dif
 mudado código, algo está errado.
 
 ## Mudar um banner ou criar um tema
-1. `tools/banner_art.py`: `THEMES` (id, nome, texto do banner, `pal0 = (bd, txt, hl, sh)` em cores NES)
-   e `DECOS` (função de decoração por tema, desenha com as cores 0–3). A fonte 5×7 (`FONT5x7`) só tem
-   os caracteres usados — acrescente os que faltarem.
-   **Papéis das cores** (`pal0 = (bd, txt, hl, sh)`): na lista de arquivos `hl` é o **fundo**, `txt` o nome
-   dos arquivos e `sh` pastas/seleção; nas janelas e na barra de status `sh` é o fundo do texto branco.
-   Logo `hl` claro, `txt`/`sh` escuros. O build recusa paletas com pouco contraste (`check_contrast`).
-   Confira sempre uma pasta com **arquivos** (fonte normal), não só a raiz (pastas usam a fonte destacada).
+1. `tools/banner_art.py`: `THEMES` (id, nome, texto do banner, cores via `T(...)`), `DECOS` (decoração
+   por tema, cores 1–3), `STYLES` (estilo do título) e `ICONS` (ícones nos cantos, x < 32 e x ≥ 224).
+   A fonte 5×7 (`FONT5x7`) só tem os caracteres usados — acrescente os que faltarem.
+   **Cada tema define uma paleta completa de 16 cores** (`palette16`), por papel:
+   `bd` (fundo geral), `file` (nomes de arquivo), `bg` (**fundo da lista**), `folder` (pastas/seleção),
+   `banner` (escura, média, clara), `icon` (3 cores dos ícones dos cantos, paleta 2) e
+   `popup` (texto, fundo e item destacado das janelas e da barra de status).
+   O build recusa combinações ilegíveis (`check_contrast`: ≥ 40 L*). Confira sempre uma pasta com
+   **arquivos** (fonte normal), não só a raiz (pastas usam a fonte destacada).
 2. `python tools/banner_art.py` mostra quantos tiles cada banner usa e grava prévias em
    `docs/themes/banners/`. Limite: `MAX_TILES = 39` por banner (slots livres da fonte).
 3. Tema novo (10º): ajuste também `NUM_THEMES` em `tools/theme_runtime.py`. Confira o espaço: o
-   `assert` "Theme data exceeds Bank 0x0B space" dispara se os pacotes passarem de `$7A40`.
+   `assert` "Theme data exceeds Bank 0x0B space" dispara se os pacotes passarem de `$79A0`.
 4. Install + testes + `python tools/capture_theme_screenshots.py`.
 
 ## Adicionar uma opção ao menu do jogo

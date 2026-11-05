@@ -102,6 +102,8 @@ argumento** (exatamente como o OS faz); quem é chamado desempilha. Helpers: `$F
 | `$FA9F` | ponteiro "Apenas Selec." | ponteiro "Info da ROM" |
 | `$F66A` | "Sel. e Iniciar" | "Carregar jogo" |
 | `$8103` | (v1.4 tinha hook) | original `LDA $2002 / PLA / RTI` |
+| `$F7B9–$F899` + 14 ponteiros em `$D1C7…$D251` | textos do "Sobre" | crédito do mod e controles atuais (`theme_runtime.ABOUT_LINES`, máx. 225 bytes) |
+| `$63C0`, `$63C7` (sombra) | atributo `$05` | `$0A`: cantos do banner usam a paleta 2 (ícones) |
 
 ## 6. Nosso código
 ### Banco 15, região `$FAE4–$FBFD` (`theme_runtime.build_runtime`)
@@ -114,7 +116,7 @@ argumento** (exatamente como o OS faz); quem é chamado desempilha. Helpers: `$F
 | :--- | :--- |
 | `$6000` | ponteiros dos 9 pacotes |
 | `$6012…` | pacotes: nametable 64 B (linhas 0–1) + nº de tiles + (slot, 16 B) por tile |
-| `$7A40` | paletas dos temas (9 × 4: bd, txt, hl, sh) |
+| `$79A0` | paletas dos temas (9 × 16 cores, `banner_art.palette16`) |
 | `$7A70` | loader (paleta + tiles; usa `$9A–$9D`) |
 | `$7B40` | capas: `ART_INFO`; `$7B6C` `ART_MENU` (endereço conferido por assert) |
 | `$7FE0` | rascunho: cópia de `$0300–$030F` durante `$BC71` |

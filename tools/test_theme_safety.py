@@ -78,14 +78,19 @@ def sig(emu):
     return list(emu.prg_ram[8][SIG - 0x6000: SIG - 0x6000 + 4])
 
 
-def check_applied(emu, pkgs, tid, label):
+def check_applied(emu, pkgs, tid, label, nt_from_shadow=False):
+    """Palette (all 16 colours), banner nametable and banner CHR tiles of theme tid.
+    nt_from_shadow: check the OS nametable shadow (bank 8 $6000) instead of VRAM; the
+    plain emulator fires its NMI by instruction count, which can land between an OS
+    $2006 pair during boot and misplace a VRAM row (not something hardware does)."""
     pkg = pkgs[tid]
     ok = True
-    if list(emu.palette[0:4]) != list(pkg['pal0']):
-        print(f"    FAIL {label}: palette {bytes(emu.palette[0:4]).hex()} != {bytes(pkg['pal0']).hex()}")
+    if bytes(emu.palette[0:16]) != bytes(pkg['palette']):
+        print(f"    FAIL {label}: palette {bytes(emu.palette[0:16]).hex()} != {bytes(pkg['palette']).hex()}")
         ok = False
-    if bytes(emu.vram[0:96]) != bytes(pkg['nametable']):
-        print(f"    FAIL {label}: banner nametable in VRAM differs")
+    nt = bytes(emu.prg_ram[8][0:96]) if nt_from_shadow else bytes(emu.vram[0:96])
+    if nt != bytes(pkg['nametable']):
+        print(f"    FAIL {label}: banner nametable in {'shadow' if nt_from_shadow else 'VRAM'} differs")
         ok = False
     bad = [s for s, tb in pkg['tiles'] if bytes(emu.chr_ram[s*16:(s+1)*16]) != bytes(tb)]
     if bad:
@@ -149,7 +154,7 @@ def main(os_path=None):
     # --- 3. persistence across reset (bank 8 retained, OS.BIN reloaded)
     saved = bytes(emu.prg_ram[8])
     emu2, probe2 = boot(os_path, bank8=saved)
-    expect(theme(emu2) == 3 and check_applied(emu2, pkgs, 3, "reboot"), "theme 3 restored after reboot")
+    expect(theme(emu2) == 3 and check_applied(emu2, pkgs, 3, "reboot", nt_from_shadow=True), "theme 3 restored after reboot")
     expect(not probe2.nmi_violations and not probe2.heap_violations, "no unsafe writes during reboot restore")
 
     # --- 4. garbage in bank 8 must not select an invalid theme

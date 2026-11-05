@@ -65,7 +65,7 @@ Capas: [libretro-thumbnails](https://github.com/libretro-thumbnails/Nintendo_-_N
 | :---: | :---: | :---: |
 | ![RETROGAMER POA](docs/screenshots/theme0_retrogamer_poa.png)<br>**RETROGAMER POA** | ![PADRÃO](docs/screenshots/theme1_padrao.png)<br>**PADRÃO** | ![SYNTHWAVE](docs/screenshots/theme2_synthwave.png)<br>**SYNTHWAVE** |
 | ![OUTRUN](docs/screenshots/theme3_outrun.png)<br>**OUTRUN** | ![16-BIT](docs/screenshots/theme4_16_bit.png)<br>**16-BIT** | ![RETROCHIMP](docs/screenshots/theme5_retrochimp.png)<br>**RETROCHIMP** |
-| ![MAD DRUGA](docs/screenshots/theme6_mad_druga.png)<br>**MAD DRUGA** | ![CYBERPUNK](docs/screenshots/theme7_cyberpunk.png)<br>**CYBERPUNK** | ![GAME BOY](docs/screenshots/theme8_game_boy.png)<br>**GAME BOY** |
+| ![MADDRUGAMERS](docs/screenshots/theme6_maddrugamers.png)<br>**MADDRUGAMERS** | ![CYBERPUNK](docs/screenshots/theme7_cyberpunk.png)<br>**CYBERPUNK** | ![GAME BOY](docs/screenshots/theme8_game_boy.png)<br>**GAME BOY** |
 
 Os banners são gerados por código (`tools/banner_art.py`, prévia em `docs/themes/banners/`). O tema escolhido é salvo na RAM do cartucho (banco 8, `$7FF8`) e restaurado ao reiniciar.
 

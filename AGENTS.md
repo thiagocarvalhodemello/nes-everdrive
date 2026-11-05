@@ -26,7 +26,7 @@ Leia antes de mexer:
    variáveis da listagem). Nunca escreva lá (v1.4 escrevia e corrompia a lista até reiniciar).
    Áreas livres: `$0100–$018F` (pilha nunca desce de `$01DF`) e `$0200–$02FF`.
 5. **Espaço é escasso e tem orçamento**: banco 15 `$FAE4–$FBFD` (282 B, usado 257), banco `$0B`
-   (dados de tema ≤ `$7A40`, loader ≤ `$7B40`, capas ≤ `$7FE0`). Os scripts têm `assert` — não os remova.
+   (dados de tema ≤ `$79A0`, paletas `$79A0–$7A2F`, loader ≤ `$7B40`, capas ≤ `$7FE0`). Os scripts têm `assert` — não os remova.
 6. **Banco 12 e 15 são criptografados** (XOR por posição). Patch = `plano ^ keystream`. Bancos 13/14 não.
    Veja a seção "Criptografia" em ARQUITETURA.md antes de alterar qualquer byte fora da região livre.
 7. **`EDFC/OS.BIN` commitado é a fonte da verdade.** `tools/install_banner_theme.py` aplica todos os

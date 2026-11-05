@@ -2,7 +2,7 @@ import os, sys, struct, zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from edfc_emu import EverDriveN8Emu, save_png, NES_PALETTE
-from banner_art import build_banner_packages, THEMES
+from banner_art import build_banner_packages, THEMES, palette16
 from theme_runtime import B11_LOADER, B11_PAL_TABLE, NT_BYTES
 from art_runtime import ART_MAIN, install_into_bank11
 
@@ -101,11 +101,13 @@ def build_bank11_image(packages):
     print(f"Bank 0x0B theme data ends at offset 0x{data_offset:04X} (CPU: ${0x6000+data_offset:04X})")
     assert data_offset <= PAL_TABLE - 0x6000, "Theme data exceeds Bank 0x0B space!"
 
-    # Palette table (36 bytes) right after the theme packages
+    # Palette table: 16 bytes per theme (the full PPU background palette, see banner_art)
     pal_table_offset = PAL_TABLE - 0x6000
     pal_table_cpu = PAL_TABLE
-    for i, (_, _, _, pal0) in enumerate(THEMES):
-        b11[pal_table_offset + i*4 : pal_table_offset + i*4 + 4] = pal0
+    for i, (_, _, _, colours) in enumerate(THEMES):
+        b11[pal_table_offset + i*16 : pal_table_offset + i*16 + 16] = palette16(colours)
+    assert PAL_TABLE + 16 * len(THEMES) <= LOADER, "palette table overlaps the loader"
+
 
     # LOAD_THEME routine at LOADER (address shared with theme_runtime.B11_LOADER)
     # A = theme_id
@@ -120,27 +122,21 @@ def build_bank11_image(packages):
         (None, "LDA_IMM", 0x00),
         (None, "STA_ABS", 0x2001),
 
-        # 2. Expand Palette from $7E00 into $827C..$828B
+        # 2. Copy the theme's 16-byte palette into the OS palette $827C..$828B
         (None, "TSX", None),
         (None, "LDA_ABX", 0x0103), # theme_id from stack
         (None, "ASL", None),
         (None, "ASL", None),
+        (None, "ASL", None),
+        (None, "ASL", None),
         (None, "TAX", None),
-        (None, "LDA_ABX", pal_table_cpu),     # bd
-        (None, "STA_ABS", 0x827C),
-        (None, "LDA_ABX", pal_table_cpu + 1), # txt
-        (None, "STA_ABS", 0x827D),
-        (None, "STA_ABS", 0x8282),
-        (None, "LDA_ABX", pal_table_cpu + 2), # hl
-        (None, "STA_ABS", 0x827E),
-        (None, "STA_ABS", 0x828B),
-        (None, "STA_ABS", 0x8283),
-        (None, "LDA_ABX", pal_table_cpu + 3), # sh
-        (None, "STA_ABS", 0x827F),
-        (None, "STA_ABS", 0x828A),
-        (None, "STA_ABS", 0x8281),
-        (None, "LDA_IMM", 0x0F),               # black
-        (None, "STA_ABS", 0x8280),
+        (None, "LDY_IMM", 0x00),
+        ("PCOPY", "LDA_ABX", pal_table_cpu),
+        (None, "STA_ABY", 0x827C),
+        (None, "INX", None),
+        (None, "INY", None),
+        (None, "CPY_IMM", 0x10),
+        (None, "BNE", "PCOPY"),
 
         # 3. Upload 16 palette bytes from $827C..$828B to PPU $3F00..$3F0F
         (None, "BIT_ABS", 0x2002),

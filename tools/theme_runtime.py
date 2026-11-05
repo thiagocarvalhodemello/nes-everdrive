@@ -126,7 +126,7 @@ NT_BYTES = 64                  # banner nametable rows 0-1 (row 2 = black spacer
 BLACK_TILE = 0x1F
 
 # bank $0B layout (shared with test_full_banner_system / art_runtime)
-B11_PAL_TABLE = 0x7A40         # 9 x 4 palette bytes
+B11_PAL_TABLE = 0x79A0         # 9 x 16 palette bytes (banner_art.palette16)
 B11_LOADER = 0x7A70            # palette + CHR tile loader (<= 208 bytes)
 ART_ENTRY_INFO = 0x7B40        # art_runtime: ROM info entry
 ART_ENTRY_MENU = 0x7B6C        # art_runtime: game menu entry (asserted by art_runtime)
@@ -145,13 +145,62 @@ SITE_MENU_COUNT = 0xD579       # ROM file menu: 3 items -> 2
 SITE_MENU_ITEM1 = 0xD5BA       # "CMP #$01" (item 1 = "Apenas Selec.") -> never; item 1 = ROM info
 SITE_ITEMS = 0xFA9F            # DATA image of the ROM menu item table, item 1 pointer
 SITE_LOAD_STR = 0xF66A         # "Sel. e Iniciar" -> "Carregar jogo"
+
+# "Sobre" screen ($D1C4): 14 lines, each "LDA #<str / LDX #>str / JSR pushax / JSR println".
+# The string block $F7B9-$F899 (bank 15) is rewritten and the 14 pointers repointed.
+ABOUT_BLOCK = 0xF7B9
+ABOUT_BLOCK_LEN = 225          # up to "NS:" at $F89A, which stays
+ABOUT_SITES = [0xD1C7, 0xD1D1, 0xD1DB, 0xD1E5, 0xD1F3, 0xD1FD, 0xD207,
+               0xD211, 0xD21F, 0xD229, 0xD233, 0xD23D, 0xD247, 0xD251]
+# lines 1-4 use the OS title style, 5-14 the normal one (the OS sets $9F = $7F before line 5).
+# Byte 0x01 is the font's "a with acute" slot.
+ABOUT_LINES = [
+    b"",
+    b"Brinquedo de Famicom/NES",
+    b"por I. Golubovskiy",
+    b"krikzz.com",
+    b"Mod por thenobre e",
+    b"Antonio Scartezzini do",
+    b"grupo RETROGAMER POA",
+    b"",
+    b"Controles:",
+    b"ESQ/DIR - p\x01gina",
+    b"START - menu principal",
+    b"SELECT - trocar tema",
+    b"B - abrir jogo/pasta",
+    b"A - voltar",
+]
+
 KEYSTREAM = {
     HOOK_BOOT: bytes([0x2F, 0xC7, 0x0A]),
     HOOK_BANNER: bytes([0xB6, 0x4E, 0x17, 0x3E, 0x38]),
     SITE_NMI: bytes([0x9E, 0xFB, 0x89, 0xEF, 0x60]),
     SITE_ITEMS: bytes([0x5E, 0xF0]),
     SITE_LOAD_STR: bytes.fromhex("8bf1897610f9758ee1b2458ea9b0c9"),
+    ABOUT_BLOCK: bytes.fromhex(
+        "87e9d8967a203ee9b50a512a317f9917c6c0c2f96a53b20156a890b257cccbcfec7698595127b256fa14d9a988"
+        "7781e08aee59436c3c2a08812ca743ecfa6838a25a032a2cb4e49200da87e290f67958f66838f67858d1f9f578"
+        "3cd878d18730c123f8b187887d30b03461f810da58b177a87ada64b1878859f5793cd178fde8d118fde9d878c9"
+        "e82178f93de9e9e8b0a88c9ee9b2a897345df8d100f578f83478f8727477877787778737ccca6c41264885ff87"
+        "781ef77b80efbc4b80a7bec76d066010266a2d63f3277d00979b27ffdead4435dd108ba1bf1d9a334532b6be2c"),
 }
+
+
+def about_patches():
+    """String block + the 14 pointer operands of the "Sobre" screen."""
+    assert len(ABOUT_LINES) == len(ABOUT_SITES)
+    assert all(len(l) <= 28 for l in ABOUT_LINES), "About line wider than the screen"
+    block, ptrs = bytearray(), []
+    for line in ABOUT_LINES:
+        ptrs.append(ABOUT_BLOCK + len(block))
+        block += line + b"\x00"
+    assert len(block) <= ABOUT_BLOCK_LEN, f"About text too long: {len(block)} > {ABOUT_BLOCK_LEN}"
+    block += bytes(ABOUT_BLOCK_LEN - len(block))
+    out = {ABOUT_BLOCK: bytes(block)}
+    for site, ptr in zip(ABOUT_SITES, ptrs):
+        out[site + 1] = bytes([ptr & 0xFF])      # LDA #lo
+        out[site + 3] = bytes([ptr >> 8])        # LDX #hi
+    return out
 
 
 def _map(bank):
@@ -205,6 +254,9 @@ def build_runtime():
         ("ALP", "STA", "abx", 0x63C0),
         (None, "DEX", "imp", None),
         (None, "BPL", "rel", "ALP"),
+        (None, "LDA", "imm", 0x0A),                # banner corners (x<32, x>=224): palette 2 (icons)
+        (None, "STA", "abs", 0x63C0),
+        (None, "STA", "abs", 0x63C7),
         (None, "RTS", "imp", None),
     ]
 
@@ -325,6 +377,7 @@ def os_patches(labels, orig_data):
         SITE_MENU_ITEM1: bytes([0xFE]),
         SITE_ITEMS: bytes([0x87, 0xF6]),                             # -> "Info da ROM"
         SITE_LOAD_STR: b"Carregar jogo\x00\x00",                     # 15 bytes, same slot
+        **about_patches(),
     }
 
 
