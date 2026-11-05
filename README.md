@@ -11,12 +11,12 @@ Tradução completa para Português do Brasil (PT-BR) do Sistema Operacional do 
 
 ## 🎮 Downloads (Releases)
 
-Na aba [**Releases**](https://github.com/thiagocarvalhodemello/nes-everdrive/releases) (versão atual: **v1.5**) há dois arquivos. Escolha **um** e extraia na **raiz** do cartão MicroSD (FAT16/FAT32):
+Na aba [**Releases**](https://github.com/thiagocarvalhodemello/nes-everdrive/releases) (versão atual: **v1.6**) há dois arquivos. Escolha **um** e extraia na **raiz** do cartão MicroSD (FAT16/FAT32):
 
 | Arquivo | Conteúdo |
 | :--- | :--- |
-| `EDFC-N8-PTBR-v1.5-com-capas.zip` | Sistema completo **+ 2.504 capas** (`EDFC/ARTS/`). |
-| `EDFC-N8-PTBR-v1.5.zip` | Sistema completo, sem capas. |
+| `EDFC-N8-PTBR-v1.6-com-capas.zip` | Sistema completo **+ 2.504 capas** (`EDFC/ARTS/`). |
+| `EDFC-N8-PTBR-v1.6.zip` | Sistema completo, sem capas. |
 
 As capas são identificadas pelo **conteúdo** da ROM (não pelo nome do arquivo), então funcionam com dumps padrão No-Intro/GoodNES. A versão para **hardware original Krikzz (base v1.26)** continua na [release v1.3](https://github.com/thiagocarvalhodemello/nes-everdrive/releases/tag/v1.3-ptbr).
 

@@ -1,6 +1,6 @@
 # Arquitetura técnica
 
-Tudo aqui foi levantado por engenharia reversa do OS decriptado (base oficial v1.26 traduzida), com o
+Tudo aqui foi levantado por engenharia reversa do OS decriptado (OS de fábrica da placa clone Drive-N8 V3.1 2024.07, que se identifica como "OS ver 13"; a base oficial v1.26 da Krikzz só vale para a release v1.3), com o
 emulador do projeto. Endereços de CPU em `$xxxx`; offsets de arquivo em `0x....`.
 
 ## 1. Layout do `OS.BIN` (57.344 bytes = 7 bancos de 8 KB)
