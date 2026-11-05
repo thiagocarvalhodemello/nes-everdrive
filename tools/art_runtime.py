@@ -21,9 +21,12 @@ tables and directory variables): that corrupted the file list until reboot.
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from theme_runtime import assemble, ART_ENTRY_INFO, ART_ENTRY_MENU
+from theme_runtime import (assemble, build_runtime, B11_DISPATCH, B11_VARS, B11_CACHE,
+                           FAR_ID, THEME_ID, NUM_THEMES, OS_REDRAW,
+                           FAR_INFO, FAR_MENU, FAR_MAIN, FAR_SEL, FAR_FAVADD)
+from fav_runtime import fav_listing, fav_symbols, DATA
 
-ART_MAIN = ART_ENTRY_INFO   # bank $0B, after theme packages, palette table, loader
+ART_MAIN = B11_DISPATCH     # bank $0B far code: dispatcher first
 ART_LIMIT = 0x8000          # end of bank $0B window
 
 # OS entry points
@@ -48,7 +51,7 @@ ART_X, ART_Y = 192, 48
 
 # ---- RAM trampoline (assembled for $0100, stored in bank $0B and copied)
 T = 0x0100
-T_LIMIT = 0x0190
+T_LIMIT = 0x01B0            # hardware stack measured never below $01DF
 
 
 def _map(bank):
@@ -71,6 +74,12 @@ def build_tramp():
     L += [(None, "LDY", "imm", 3),
           ("PK", "LDA", "indy", 0x30), (None, "STA", "aby", "CLUS"),
           (None, "DEY", "imp", None), (None, "BPL", "rel", "PK")]
+    L += _map(0x0B) + [(None, "RTS", "imp", None)]
+    # T_COPY: copy CNT bytes (0 = 256) from ($9A) to ($9C) with bank 8 mapped
+    L += [("T_COPY", "LDA", "imm", 0x81)] + _map(0x08)[1:]
+    L += [(None, "LDY", "imm", 0),
+          ("CPYL", "LDA", "indy", 0x9A), (None, "STA", "indy", 0x9C),
+          (None, "INY", "imp", None), (None, "CPY", "abs", "CNT"), (None, "BNE", "rel", "CPYL")]
     L += _map(0x0B) + [(None, "RTS", "imp", None)]
     VARS = [("ARTSTR", b"arts\x00"), ("NAME11", b"00000000BIN\x00"),
             ("T_A", b"\x00"), ("T_X", b"\x00"), ("RES", b"\x00"), ("ZP", bytes(6)), ("CNT", b"\x00"), ("ADDR", b"\x00"),
@@ -298,12 +307,22 @@ def build_main(tramp_len, sym):
           ("HEX1", "CMP", "imm", 10), (None, "BCC", "rel", "HD"), (None, "ADC", "imm", 6),
           ("HD", "ADC", "imm", 0x30), (None, "STA", "abx", "NAME11"), (None, "INX", "imp", None),
           (None, "RTS", "imp", None)]
-    # TSRC = trampoline bytes appended after the code
-    code, lab = assemble(L, ART_MAIN, dict(sym, TSRC=0))
-    assert lab["ART_MENU"] == ART_ENTRY_MENU, f"ART_MENU at ${lab['ART_MENU']:04X}, theme_runtime expects ${ART_ENTRY_MENU:04X}"
-    tsrc = ART_MAIN + len(code)
-    code, lab = assemble(L, ART_MAIN, dict(sym, TSRC=tsrc))
-    return code, lab
+    # dispatcher + theme key + favourites first (DISPATCH must sit at B11_DISPATCH)
+    consts = dict(FAR_ID=FAR_ID, THEME_ID=THEME_ID, NUM_THEMES=NUM_THEMES, B11_CACHE=B11_CACHE)
+    L = fav_listing(build_runtime()[1]["APPLY"], consts) + L
+    sym = dict(sym, **fav_symbols(B11_VARS))
+    # layout: code | strings (DATA) | trampoline image (TSRC)
+    dummy = {n: 0 for n, _ in DATA}
+    code, _ = assemble(L, ART_MAIN, dict(sym, TSRC=0, **dummy))
+    dsym, a, data = {}, ART_MAIN + len(code), bytearray()
+    for n, b in DATA:
+        dsym[n] = a + len(data)
+        data += b
+    tsrc = ART_MAIN + len(code) + len(data)
+    code, lab = assemble(L, ART_MAIN, dict(sym, TSRC=tsrc, **dsym))
+    assert lab["DISPATCH"] == B11_DISPATCH
+    lab.update(dsym)
+    return code + bytes(data), lab
 
 
 def build_art_blob():

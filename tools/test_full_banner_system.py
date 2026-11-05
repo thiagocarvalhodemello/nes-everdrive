@@ -3,7 +3,7 @@ import os, sys, struct, zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from edfc_emu import EverDriveN8Emu, save_png, NES_PALETTE
 from banner_art import build_banner_packages, THEMES, palette16
-from theme_runtime import B11_LOADER, B11_PAL_TABLE, NT_BYTES
+from theme_runtime import B11_LOADER, B11_PAL_TABLE, B11_VARS, NT_BYTES
 from art_runtime import ART_MAIN, install_into_bank11
 
 # Opcode dictionary for assembler
@@ -236,7 +236,7 @@ def build_bank11_image(packages):
     ]
     loader_code = assemble_listing(loader_listing, LOADER)
     print(f"Bank 0x0B loader size: {len(loader_code)} bytes (${LOADER:04X}..${LOADER+len(loader_code):04X})")
-    assert LOADER + len(loader_code) <= ART_MAIN, "Loader overlaps the art runtime!"
+    assert LOADER + len(loader_code) <= B11_VARS, "Loader overlaps the favourites variables!"
     b11[LOADER - 0x6000 : LOADER - 0x6000 + len(loader_code)] = loader_code
     install_into_bank11(b11)
     return b11

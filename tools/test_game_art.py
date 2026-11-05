@@ -21,8 +21,8 @@ sys.path.insert(0, TOOLS)
 from edfc_emu import EverDriveN8Emu
 import nes_art
 
-ART_CODE = range(0x7C90, 0x8000)     # art runtime in bank $0B
-TRAMP = range(0x0300, 0x0400)
+ART_CODE = range(0x73D0, 0x8000)     # far code in bank $0B (art_runtime + fav_runtime)
+TRAMP = range(0x0100, 0x01B0)
 
 
 def make_rom(seed, mapper=0):

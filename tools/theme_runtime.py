@@ -21,7 +21,7 @@ $7BA6..$7BA9 and banner copy at $7C00..$7C5F lived inside those buffers.
 New rules:
   * The NMI is the OS's original one (v1.4 hooked it; restored in v1.5).
   * SELECT in the file browser is the theme key: the OS's own SELECT branch
-    calls SELNEXT, which applies the next theme in the browser's main-thread
+    calls the far entry FAR_SEL, which applies the next theme in the browser's main-thread
     context and asks the browser for a full redraw. START opens the main menu.
   * The theme saved for boot is applied from the OS's "wait for button" idle
     loops (hook 4, $ABBD), where bank 8 is mapped and nothing is in flight.
@@ -37,24 +37,26 @@ New rules:
 # ---------------------------------------------------------------------------
 _OPS = {
     # mnemonic: {mode: opcode}
-    "ADC": {"imm": 0x69, "abs": 0x6D}, "AND": {"imm": 0x29},
+    "ADC": {"imm": 0x69, "abs": 0x6D}, "AND": {"imm": 0x29, "abs": 0x2D},
+    "SBC": {"imm": 0xE9, "abs": 0xED},
     "ASL": {"imp": 0x0A},
     "BCC": {"rel": 0x90}, "BCS": {"rel": 0xB0}, "BEQ": {"rel": 0xF0},
     "BMI": {"rel": 0x30}, "BNE": {"rel": 0xD0}, "BPL": {"rel": 0x10},
     "BIT": {"abs": 0x2C}, "CLC": {"imp": 0x18}, "SEC": {"imp": 0x38},
-    "CMP": {"imm": 0xC9, "abs": 0xCD}, "CPX": {"imm": 0xE0}, "CPY": {"imm": 0xC0},
+    "CMP": {"imm": 0xC9, "abs": 0xCD, "abx": 0xDD, "aby": 0xD9},
+    "CPX": {"imm": 0xE0, "abs": 0xEC}, "CPY": {"imm": 0xC0, "abs": 0xCC},
     "DEC": {"abs": 0xCE}, "DEX": {"imp": 0xCA}, "DEY": {"imp": 0x88},
     "EOR": {"imm": 0x49, "zp": 0x45, "abs": 0x4D},
     "INC": {"abs": 0xEE}, "INX": {"imp": 0xE8}, "INY": {"imp": 0xC8},
     "JMP": {"abs": 0x4C}, "JSR": {"abs": 0x20},
     "LDA": {"imm": 0xA9, "zp": 0xA5, "abs": 0xAD, "abx": 0xBD, "aby": 0xB9, "indy": 0xB1},
-    "LDX": {"imm": 0xA2, "abs": 0xAE}, "LDY": {"imm": 0xA0},
+    "LDX": {"imm": 0xA2, "abs": 0xAE}, "LDY": {"imm": 0xA0, "abs": 0xAC},
     "LSR": {"imp": 0x4A, "zp": 0x46},
     "ORA": {"imm": 0x09, "abs": 0x0D},
     "PHA": {"imp": 0x48}, "PLA": {"imp": 0x68},
     "ROR": {"zp": 0x66},
     "RTI": {"imp": 0x40}, "RTS": {"imp": 0x60},
-    "STA": {"zp": 0x85, "abs": 0x8D, "abx": 0x9D, "aby": 0x99},
+    "STA": {"zp": 0x85, "abs": 0x8D, "abx": 0x9D, "aby": 0x99, "indy": 0x91},
     "STX": {"abs": 0x8E},
     "TAX": {"imp": 0xAA}, "TAY": {"imp": 0xA8}, "TXA": {"imp": 0x8A}, "TYA": {"imp": 0x98},
 }
@@ -107,6 +109,7 @@ REGION_START = 0xFAE4          # bank 15 RAM, all-zero plaintext in the original
 REGION_LEN = 282               # $FAE4..$FBFD (same window the previous build used)
 FILE_REGION = 0xDAE4           # file offset of REGION_START in OS.BIN
 
+FAR_ID = 0xFAE4                # entry number for the bank $0B dispatcher (see FAR)
 THEME_ID = 0xFAE5              # theme currently on screen
 WANT_ID = 0xFAE6               # theme requested by BOOT; applied from the idle loop
 FORCE = 0x80                   # WANT_ID bit 7: apply even if equal (boot palette/CHR)
@@ -126,10 +129,16 @@ NT_BYTES = 64                  # banner nametable rows 0-1 (row 2 = black spacer
 BLACK_TILE = 0x1F
 
 # bank $0B layout (shared with test_full_banner_system / art_runtime)
-B11_PAL_TABLE = 0x79A0         # 9 x 16 palette bytes (banner_art.palette16)
-B11_LOADER = 0x7A70            # palette + CHR tile loader (<= 208 bytes)
-ART_ENTRY_INFO = 0x7B40        # art_runtime: ROM info entry
-ART_ENTRY_MENU = 0x7B6C        # art_runtime: game menu entry (asserted by art_runtime)
+B11_PAL_TABLE = 0x6E60         # 9 x 16 palette bytes (banner_art.palette16); theme data ends before
+B11_LOADER = 0x6F00            # palette + CHR tile loader (<= 0xC0 bytes)
+B11_VARS = 0x6FC0              # favourites variables (16 bytes)
+B11_CACHE = 0x6FD0             # favourites name cache: 32 x 32 bytes
+B11_DISPATCH = 0x73D0          # far code: dispatcher, covers, theme key, favourites (art_runtime)
+FAR_INFO, FAR_MENU, FAR_MAIN, FAR_SEL, FAR_FAVADD = range(5)
+
+# Main menu: the OS table at $03C9 (title + 5 items) is full, so the menu points to a
+# new table in our region with a 6th item, "Favoritos" (result 5).
+MAIN_MENU_STRS = [0xF693, 0xF6A2, 0xF6A9, 0xF6B2, 0xF6BF, 0xF6CC]   # title, 5 OS items
 
 # Sites patched in the OS. Value: keystream (orig_enc ^ orig_plain) for the
 # bytes written; banks 13/14 are stored in plaintext (keystream 0).
@@ -145,6 +154,12 @@ SITE_MENU_COUNT = 0xD579       # ROM file menu: 3 items -> 2
 SITE_MENU_ITEM1 = 0xD5BA       # "CMP #$01" (item 1 = "Apenas Selec.") -> never; item 1 = ROM info
 SITE_ITEMS = 0xFA9F            # DATA image of the ROM menu item table, item 1 pointer
 SITE_LOAD_STR = 0xF66A         # "Sel. e Iniciar" -> "Carregar jogo"
+SITE_FAV_STR = 0xF679          # "Apenas Selec." (unused since v1.5) -> "Favoritar"
+SITE_ITEMS2 = 0xFAA1           # DATA image: ROM menu item 2 pointer -> "Favoritar"
+SITE_FAVADD = 0xD5BD           # ROM menu result 2 (was the "Apenas Selec." code) -> add favourite
+SITE_MAIN_TABLE = 0xCB56       # main menu: operands of LDA #<table / LDX #>table
+SITE_MAIN_COUNT = 0xCB5D       # main menu: 5 items -> 6
+SITE_MAIN_DISP = 0xCBAF        # main menu: LDY #0 / LDA (sp),Y / BNE $CB55 -> JSR H_MAIN
 
 # "Sobre" screen ($D1C4): 14 lines, each "LDA #<str / LDX #>str / JSR pushax / JSR println".
 # The string block $F7B9-$F899 (bank 15) is rewritten and the 14 pointers repointed.
@@ -177,6 +192,8 @@ KEYSTREAM = {
     SITE_NMI: bytes([0x9E, 0xFB, 0x89, 0xEF, 0x60]),
     SITE_ITEMS: bytes([0x5E, 0xF0]),
     SITE_LOAD_STR: bytes.fromhex("8bf1897610f9758ee1b2458ea9b0c9"),
+    SITE_FAV_STR: bytes.fromhex("63086e1e2864236dfd29730e9995"),
+    SITE_ITEMS2: bytes.fromhex("98a3"),
     ABOUT_BLOCK: bytes.fromhex(
         "87e9d8967a203ee9b50a512a317f9917c6c0c2f96a53b20156a890b257cccbcfec7698595127b256fa14d9a988"
         "7781e08aee59436c3c2a08812ca743ecfa6838a25a032a2cb4e49200da87e290f67958f66838f67858d1f9f578"
@@ -304,22 +321,6 @@ def build_runtime():
         (None, "RTS", "imp", None),
     ]
 
-    # --- Browser SELECT (replaces LDY #0 / JSR $CB50 at $DBFC; the OS then
-    # jumps to its browser loop): next theme, applied right here in the
-    # browser's own context, and a full redraw of the screen.
-    L += [
-        ("SELNEXT", "LDX", "abs", THEME_ID),
-        (None, "INX", "imp", None),
-        (None, "CPX", "imm", NUM_THEMES),
-        (None, "BCC", "rel", "SN"),
-        (None, "LDX", "imm", 0),
-        ("SN", "TXA", "imp", None),
-        (None, "JSR", "abs", "APPLY"),
-        (None, "LDA", "imm", 1),
-        (None, "STA", "abs", OS_REDRAW),
-        (None, "RTS", "imp", None),
-    ]
-
     # --- Hook 4: $ABBD (OS "wait for button" loops): applies the boot request.
     L += [
         ("IDLE", "LDA", "abs", WANT_ID),
@@ -338,16 +339,27 @@ def build_runtime():
         (None, "JMP", "abs", OS_DECSP2),
     ]
 
-    # --- Hooks 5/6: art runtime entries in bank $0B (art_runtime.py); they
-    # return through their RAM trampoline with bank 8 mapped again.
+    # --- Far calls into bank $0B (art_runtime: covers, theme key, favourites). Each
+    # hook site JSRs a 5-byte entry that loads the entry number and jumps to FAR;
+    # the bank $0B code returns through its RAM trampoline with bank 8 mapped.
+    L += [
+        ("H_INFO", "LDA", "imm", FAR_INFO), (None, "JMP", "abs", "FAR"),
+        ("H_MENU", "LDA", "imm", FAR_MENU), (None, "JMP", "abs", "FAR"),
+        ("H_MAIN", "LDA", "imm", FAR_MAIN), (None, "JMP", "abs", "FAR"),
+        ("H_SEL", "LDA", "imm", FAR_SEL), (None, "JMP", "abs", "FAR"),
+        ("H_FAVADD", "LDA", "imm", FAR_FAVADD),        # falls into FAR
+        ("FAR", "STA", "abs", FAR_ID),
+    ]
     L += _map(0x0B)
-    L[-4] = ("ART_HOOK",) + L[-4][1:]
-    L += [(None, "JMP", "abs", ART_ENTRY_INFO)]
-    L += _map(0x0B)
-    L[-4] = ("ART_MENU_HOOK",) + L[-4][1:]
-    L += [(None, "JMP", "abs", ART_ENTRY_MENU)]
+    L += [(None, "JMP", "abs", B11_DISPATCH)]
 
     code, labels = assemble(L, CODE_START)
+    # main menu table (title + 6 items) and the "Favoritos" item text, after the code
+    table_at = CODE_START + len(code)
+    fav_str = table_at + 2 * (len(MAIN_MENU_STRS) + 1)
+    table = b"".join(bytes([p & 0xFF, p >> 8]) for p in MAIN_MENU_STRS + [fav_str])
+    code = code + table + b"Favoritos\x00"
+    labels["MAIN_TABLE"], labels["FAV_STR"] = table_at, fav_str
     end = CODE_START + len(code)
     assert end <= REGION_START + REGION_LEN, \
         f"theme runtime too large: ends at ${end:04X}, limit ${REGION_START + REGION_LEN:04X}"
@@ -368,15 +380,22 @@ def os_patches(labels, orig_data):
         HOOK_BOOT: j(0x20, labels["BOOT"]),
         HOOK_BANNER: j(0x4C, labels["BANNER"]) + b"\xEA\xEA",
         HOOK_IDLE: j(0x20, labels["IDLE"]),
-        HOOK_ART: j(0x20, labels["ART_HOOK"]),
-        HOOK_ART_MENU: j(0x20, labels["ART_MENU_HOOK"]),
+        HOOK_ART: j(0x20, labels["H_INFO"]),
+        HOOK_ART_MENU: j(0x20, labels["H_MENU"]),
         SITE_NMI: bytes.fromhex("ad02206840"),                       # LDA $2002 / PLA / RTI
         SITE_START: bytes([0xA0, 0x00]) + j(0x20, OS_MAIN_MENU) + j(0x4C, OS_BROWSER_LOOP),
-        SITE_SELECT: j(0x20, labels["SELNEXT"]) + b"\xEA\xEA",     # then JMP $D89E (original)
-        SITE_MENU_COUNT: bytes([0x02]),
-        SITE_MENU_ITEM1: bytes([0xFE]),
-        SITE_ITEMS: bytes([0x87, 0xF6]),                             # -> "Info da ROM"
+        SITE_SELECT: j(0x20, labels["H_SEL"]) + b"\xEA\xEA",       # then JMP $D89E (original)
+        SITE_MENU_COUNT: bytes([0x03]),                              # Carregar, Info da ROM, Favoritar
+        SITE_MENU_ITEM1: bytes([0x02]),                              # result 2 -> $D5BD; 1 -> ROM info
+        SITE_ITEMS: bytes([0x87, 0xF6]),                             # item 1 -> "Info da ROM"
+        SITE_ITEMS2: bytes([SITE_FAV_STR & 0xFF, SITE_FAV_STR >> 8]),  # item 2 -> "Favoritar"
         SITE_LOAD_STR: b"Carregar jogo\x00\x00",                     # 15 bytes, same slot
+        SITE_FAV_STR: b"Favoritar\x00\x00\x00\x00\x00",              # 14 bytes, same slot
+        # result 2: add favourite, then return 0 (stay in the browser) like the other items
+        SITE_FAVADD: j(0x20, labels["H_FAVADD"]) + bytes([0xA9, 0x00]) + j(0x4C, 0xD5E5),
+        SITE_MAIN_TABLE: bytes([labels["MAIN_TABLE"] & 0xFF, 0xA2, labels["MAIN_TABLE"] >> 8]),
+        SITE_MAIN_COUNT: bytes([0x06]),
+        SITE_MAIN_DISP: j(0x20, labels["H_MAIN"]) + b"\xEA\xEA\xEA",
         **about_patches(),
     }
 
@@ -398,6 +417,6 @@ def patch_runtime(data, orig_data):
 
 if __name__ == "__main__":
     payload, labels = build_runtime()
-    for k in ("BANNER", "BANNER_BODY", "BOOT", "APPLY", "SELNEXT", "IDLE", "ART_HOOK", "ART_MENU_HOOK", "_END"):
+    for k in ("BANNER", "BANNER_BODY", "BOOT", "APPLY", "IDLE", "H_INFO", "FAR", "MAIN_TABLE", "_END"):
         print(f"  {k:14s} ${labels[k]:04X}")
     print(f"  used {labels['_END'] - REGION_START} / {REGION_LEN} bytes")

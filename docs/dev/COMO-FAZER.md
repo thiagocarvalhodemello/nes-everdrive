@@ -8,6 +8,7 @@ Todos os comandos rodam na raiz do repositório.
 python tools/install_banner_theme.py   # aplica tudo em EDFC/OS.BIN (idempotente)
 python tools/test_theme_safety.py      # deve terminar em PASSED
 python tools/test_game_art.py          # deve terminar em PASSED
+python tools/test_favorites.py         # deve terminar em PASSED
 ```
 Rodar o install duas vezes não muda nada; se `git diff EDFC/OS.BIN` mostrar diferença sem você ter
 mudado código, algo está errado.
@@ -25,24 +26,32 @@ mudado código, algo está errado.
 2. `python tools/banner_art.py` mostra quantos tiles cada banner usa e grava prévias em
    `docs/themes/banners/`. Limite: `MAX_TILES = 39` por banner (slots livres da fonte).
 3. Tema novo (10º): ajuste também `NUM_THEMES` em `tools/theme_runtime.py`. Confira o espaço: o
-   `assert` "Theme data exceeds Bank 0x0B space" dispara se os pacotes passarem de `$79A0`.
+   `assert` "Theme data exceeds Bank 0x0B space" dispara se os pacotes passarem de `$6E60`.
 4. Install + testes + `python tools/capture_theme_screenshots.py`.
 
-## Adicionar uma opção ao menu do jogo
-Estado atual (ver ARQUITETURA §5): tabela de itens na imagem DATA em `$FA9D` (3 ponteiros de 2 bytes,
-banco 15 criptografado), quantidade em `$D579` (hoje 2), despacho em `$D556`:
-`resultado 0` → carregar; `CMP` em `$D5B9/$D5BA` → caminho do antigo "Apenas Selec." (`$D5BD`,
-seleciona a ROM sem iniciar); qualquer outro → Info da ROM (`$D5E1`).
-Para uma 3ª opção:
-1. String: reaproveite o espaço da string antiga (`"Apenas Selec."` em `$F679`, 13 chars + NUL) ou
-   use bytes livres da região do banco 15. Strings do banco 15 são criptografadas — gere o keystream
-   (ARQUITETURA §1) e acrescente em `theme_runtime.KEYSTREAM`.
-2. Ponteiro: 3º slot da tabela (`$FAA1–$FAA2`, também criptografado) e quantidade `$D579 = 3`.
-3. Despacho: ajuste o `CMP` de `$D5BA` para o índice da nova opção e aponte o desvio para o código
-   novo (no banco 15 se couber, ou no banco `$0B` via stub como as capas).
-4. Registre tudo em `os_patches()` (nunca edite `EDFC/OS.BIN` à mão) e acrescente um teste em
-   `tools/test_game_art.py` que abre o menu e escolhe a opção.
+## Adicionar uma opção ao menu do jogo ou ao Menu Principal
+Estado atual (ver ARQUITETURA §5):
+- **Menu do jogo**: tabela de itens na imagem DATA em `$FA9D` (3 ponteiros, banco 15 criptografado),
+  quantidade em `$D579` (= 3: Carregar jogo, Info da ROM, Favoritar), despacho em `$D556`
+  (0 → carregar; `CMP #$02` em `$D5BA` → `$D5BD` = Favoritar; resto → Info da ROM). Uma 4ª opção
+  precisa de outra string (keystream novo em `theme_runtime.KEYSTREAM`), de um 4º ponteiro — a
+  tabela DATA não tem espaço: mova-a para o banco 15 como foi feito com o Menu Principal — e de
+  despacho novo. O menu genérico `$CA0D` comporta ~8 itens.
+- **Menu Principal**: tabela `MAIN_TABLE` na nossa região do banco 15 (texto plano, sem keystream),
+  quantidade em `$CB5D`, despacho do resultado ≥ 5 em `MAIN` (`fav_runtime.py`).
+
+Código novo vai no banco `$0B` (`fav_runtime.py`, texto assembly via `asm_text`): crie um stub
+`H_X` em `theme_runtime.build_runtime` (`LDA #id; JMP FAR`), um ramo no `DISPATCH` e retorne sempre
+por `JMP T_EXIT` (depois de `JSR ZPOUT`). Chamadas ao OS só via trampolim (`T_CALL`, macro `_call`),
+pois o OS precisa do banco 8 mapeado. Textos que o OS vai ler precisam estar na RAM interna
+(`STRBUF`) ou no banco 15. Registre os patches em `os_patches()` e acrescente teste.
 Atenção: a capa fica visível enquanto o menu (`$CA0D`) roda e é escondida quando ele retorna.
+
+## Favoritos
+- `EDFC/FAVS.DAT` é gerado por `fav_runtime.favs_dat()` (32 slots vazios) e vai nos zips.
+  Recriar: `python -c "import sys; sys.path.insert(0,'tools'); from fav_runtime import favs_dat; open('EDFC/FAVS.DAT','wb').write(favs_dat())"`.
+- Ao atualizar o sistema o usuário deve manter o `FAVS.DAT` dele (avise nas notas da release).
+- Nunca grave no SD sem ler o mesmo setor antes e conferir slot + `EDFCFAV1` (ver `F_READ`/`F_WRITE`).
 
 ## Capas
 - **Formato e chave**: `tools/nes_art.py` (2 KB, CRC-32 dos bytes 512–2559 da ROM).
@@ -78,4 +87,6 @@ Atenção: a capa fica visível enquanto o menu (`$CA0D`) roda e é escondida qu
 - START → Menu Principal; fechar volta ao navegador.
 - Confirmar num jogo com capa e num sem capa; "Info da ROM"; "Carregar jogo" inicia o jogo.
 - Reiniciar: o tema volta.
+- Favoritar 2–3 jogos, abrir START → Favoritos, iniciar um e remover outro com SELECT; depois
+  conferir o cartão no PC (`chkdsk`/scandisk sem erros, `FAVS.DAT` continua com 16 KB).
 - Copiar arquivos para o cartão depois de usar o menu (nenhuma corrupção no PC).

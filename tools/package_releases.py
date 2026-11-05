@@ -15,17 +15,20 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(REPO, "releases")
 
 # what goes on the card besides EDFC/MAPS: the OS, the mapper routing table, the mapper chart
-SD_FILES = ["EDFC/OS.BIN", "EDFC/MAPROUT.BIN", "EDFC/mappers.png"]
+SD_FILES = ["EDFC/OS.BIN", "EDFC/MAPROUT.BIN", "EDFC/mappers.png", "EDFC/FAVS.DAT"]
 
 README_SD = """EverDrive N8 - OS PT-BR v{ver} (placas clone V3.1 / Cyclone II)
 
 Instalacao: extraia este .zip na RAIZ do cartao MicroSD (FAT16/FAT32).
-Deve ficar:  EDFC/OS.BIN, EDFC/MAPROUT.BIN, EDFC/MAPS/*.RBF, EDFC/SAVE/{arts}
+Deve ficar:  EDFC/OS.BIN, EDFC/MAPROUT.BIN, EDFC/FAVS.DAT, EDFC/MAPS/*.RBF, EDFC/SAVE/{arts}
 
 Controles no navegador de arquivos:
-  A/B (confirmar)  menu do jogo: capa, Carregar jogo, Info da ROM
+  A/B (confirmar)  menu do jogo: capa, Carregar jogo, Info da ROM, Favoritar
   SELECT           proximo tema (9 temas, fica salvo)
-  START            Menu Principal (Opcoes, Trapacas, Info Sistema, ...)
+  START            Menu Principal (Opcoes, Trapacas, Info Sistema, ..., Favoritos)
+
+Favoritos ficam em EDFC/FAVS.DAT (ate 32). Ao ATUALIZAR o sistema, nao
+substitua o FAVS.DAT do cartao se quiser manter a sua lista.
 """
 
 
