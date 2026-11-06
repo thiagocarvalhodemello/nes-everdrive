@@ -74,7 +74,7 @@ Atenção: a capa fica visível enquanto o menu (`$CA0D`) roda e é escondida qu
 - As capas da release saem da coleção de ROMs do mantenedor (pasta `sdcard/` fora do git):
   `python tools/art_pack.py install --sd <tmp> --roms <coleção>` gera `<tmp>/EDFC/ARTS`.
 
-## Release (só quando o usuário pedir)
+## Release (junto com toda mudança terminada)
 1. Escreva `docs/release-notes/v<versão>.md` (as imagens usam URLs `raw.githubusercontent.com/.../v<versão>-ptbr/...`).
 2. Commit + push do `main`.
 3. Tag anotada (a máquina pode não ter identidade git configurada):

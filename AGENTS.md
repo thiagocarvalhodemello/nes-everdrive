@@ -68,7 +68,7 @@ python tools/capture_menu_screenshots.py  # Menu Principal, busca (teclado, prog
 ```
 
 Commits: mensagens em português, estilo `tipo(escopo): resumo` (ex.: `fix(art): ...`).
-Releases só quando pedido — ver COMO-FAZER.md.
+**Toda mudança terminada sai com release** (o mantenedor testa no console a partir dos zips) — ver COMO-FAZER.md.
 
 ---
 
