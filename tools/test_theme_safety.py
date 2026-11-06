@@ -64,9 +64,7 @@ def boot(os_path, bank8=None):
     if bank8 is not None:
         emu.prg_ram[8][:] = bank8               # cartridge RAM kept across reset
     probe = Probe(emu)
-    emu.run_frames(40)
-    emu.press_button(0x80, wait_frames=40)      # dismiss boot message -> browser
-    emu.run_frames(20)
+    emu.boot_to_browser()                       # boot, close the main menu shown after boot
     return emu, probe
 
 

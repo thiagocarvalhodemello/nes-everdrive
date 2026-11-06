@@ -3,6 +3,8 @@ import os, sys, glob
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_full_banner_system import build_banner_packages, build_bank11_image
 from theme_runtime import patch_runtime, REGION_START, REGION_LEN
+from resident_runtime import write_overlays
+from fav_runtime import favs_dat
 
 # Immutable reference image: its bytes provide the keystream for encrypted banks.
 with open("EDFC-ORIGINAL/OS.BIN", "rb") as f:
@@ -41,6 +43,16 @@ def main():
     for t in targets:
         if os.path.exists(t):
             patch_os_bin(t, pkgs, b11_img)
+            edfc = os.path.dirname(t)
+            lab = write_overlays(edfc)          # EDFC/OVL*.BIN must match this OS.BIN
+            for n, sz in lab["_SIZES"].items():
+                print(f"  [OK] {os.path.join(edfc, n)}  ({sz} bytes, build {lab['_BUILD']:04X})")
+            for dat in ("FAVS.DAT", "RECENTS.DAT"):  # empty lists; never overwrite the user's
+                path = os.path.join(edfc, dat)
+                if not os.path.exists(path):
+                    with open(path, "wb") as f:
+                        f.write(favs_dat())
+                    print(f"  [OK] {path} (novo, vazio)")
 
     print("\nTodos os arquivos OS.BIN foram atualizados com sucesso com o sistema completo de banners e temas!")
 

@@ -24,22 +24,27 @@ Leia antes de mexer:
    assinatura do tema `$7FF8–$7FFB`.
 4. **A página `$0300–$03FF` da RAM interna é dado do OS** (segmento DATA do cc65: tabelas de menu e
    variáveis da listagem). Nunca escreva lá (v1.4 escrevia e corrompia a lista até reiniciar).
-   Áreas livres: `$0100–$01AF` (pilha nunca desce de `$01DB`) e `$0200–$02FF`.
-5. **Espaço é escasso e tem orçamento**: banco 15 `$FAE4–$FBFD` (282 B, usado 281), banco `$0B`
-   (dados de tema ≤ `$6E10`, textos `DATA2` `$6E10–$6E5F`, paletas `$6E60–$6EEF`, loader ≤ `$6FC0`, variáveis/cache dos favoritos
-   `$6FC0–$73CF`, código longo ≤ `$7FE0`, sobram ~5 bytes), trampolim ≤ `$01B0`.
-   Banco 14 `$D5DE–$D5E0`: 3 bytes livres. Os scripts têm `assert` — não os remova.
+   Áreas livres: `$0100–$01AF` (pilha nunca desce de `$01D9`) e `$0200–$02FF` (`$0280–$02BF` = tabela
+   do Menu Principal enquanto ele está aberto).
+5. **Espaço é escasso e tem orçamento**: banco 15 `$FAE4–$FBFD` (282 B, usado 271), banco `$0B`
+   (dados de tema ≤ `$6E10`, tabela do menu `$6E10–$6E5F` (cheio), paletas `$6E60–$6EEF`, loader ≤ `$6FB8`,
+   variáveis `$6FB8–$6FCF`, cache `$6FD0–$73CF`, **residente** `$73D0–OVL_BASE`, **overlay** `OVL_BASE–$7FDF`),
+   trampolim ≤ `$01B0`. Código novo grande vai para um **módulo de overlay** (`resident_runtime.py`):
+   cada módulo cabe na área de overlay (~1760 B) e roda sozinho (não chame um módulo de dentro de outro).
+   Banco 14 livre: `$D5DE–$D5E0`, `$DBF2–$DBF4`. Os scripts têm `assert` — não os remova.
 6. **Banco 12 e 15 são criptografados** (XOR por posição). Patch = `plano ^ keystream`. Bancos 13/14 não.
    Veja a seção "Criptografia" em ARQUITETURA.md antes de alterar qualquer byte fora da região livre.
 7. **`EDFC/OS.BIN` commitado é a fonte da verdade.** `tools/install_banner_theme.py` aplica todos os
    patches sobre ele e é **idempotente**. **Não rode `translate_os_ptbr.py`** para "reconstruir": ele
    gera uma base diferente (verificado: 39.516 bytes de diferença) e desfaz a tradução atual.
 8. **Testes do emulador precisam passar** antes de commitar: `tools/test_theme_safety.py`,
-   `tools/test_game_art.py` e `tools/test_favorites.py`. O emulador **não** simula tempo real de PPU; bugs de timing só aparecem no
+   `tools/test_game_art.py`, `tools/test_favorites.py` (favoritos + recentes) e `tools/test_search.py`. O emulador **não** simula tempo real de PPU; bugs de timing só aparecem no
    hardware — descreva isso honestamente ao usuário.
-9. **O console só grava no SD dentro do `EDFC/FAVS.DAT`**, que já existe com tamanho fixo (sem mexer
-   em FAT/diretório) e só depois de ler o setor e conferir slot + assinatura. Não crie outro caminho
-   de escrita sem a mesma proteção.
+9. **O console só grava no SD dentro do `EDFC/FAVS.DAT` e do `EDFC/RECENTS.DAT`**, que já existem com
+   tamanho fixo (sem mexer em FAT/diretório) e só depois de ler o setor e conferir slot + assinatura.
+   Não crie outro caminho de escrita sem a mesma proteção.
+10. **`EDFC/OVL*.BIN` e `EDFC/OS.BIN` andam juntos**: os módulos levam o build id do residente e são
+   recusados se não baterem. Sempre gere os dois com `install_banner_theme.py` e commite/empacote juntos.
 
 ---
 
@@ -50,11 +55,13 @@ Leia antes de mexer:
 python tools/install_banner_theme.py      # aplica tudo em EDFC/OS.BIN (idempotente)
 python tools/test_theme_safety.py         # temas, SELECT/START, NMI, assinatura, reboot
 python tools/test_game_art.py             # menu do jogo, capas, página 3 intacta, "Carregar jogo"
-python tools/test_favorites.py            # favoritar, lista, remover, iniciar; só FAVS.DAT é gravado
+python tools/test_favorites.py            # favoritos e recentes; só FAVS.DAT/RECENTS.DAT são gravados
+python tools/test_search.py               # Menu Principal no boot, busca, resultados
 # 2. se a tela mudou: atualizar capturas
 python tools/capture_theme_screenshots.py
 python tools/capture_art_screenshots.py --arts <pasta com EDFC/ARTS> <roms...>
-# 3. commitar código + EDFC/OS.BIN juntos
+python tools/capture_menu_screenshots.py  # Menu Principal, busca, recentes
+# 3. commitar código + EDFC/OS.BIN + EDFC/OVL*.BIN juntos
 ```
 
 Commits: mensagens em português, estilo `tipo(escopo): resumo` (ex.: `fix(art): ...`).
@@ -71,16 +78,19 @@ Releases só quando pedido — ver COMO-FAZER.md.
 | `EDFC/OS.BIN.orig` | Base usada por `translate_os_ptbr.py` (histórico; não use no fluxo normal). |
 | `EDFC/MAPS/*.RBF`, `EDFC/MAPROUT.BIN` | Núcleos FPGA e roteamento de mappers compatíveis com as placas clone. |
 | `tools/theme_runtime.py` | Assembler 6502 + código do banco 15 (temas, SELECT, boot, hooks) + **lista de todos os patches no OS** (`os_patches`). |
-| `tools/art_runtime.py` | Código das capas (banco `$0B`, trampolim em `$0100`). |
-| `tools/fav_runtime.py` | Dispatcher das chamadas longas, tecla de tema e **favoritos** (banco `$0B`); gera `EDFC/FAVS.DAT`. |
-| `EDFC/FAVS.DAT` | Arquivo de favoritos vazio (32 slots) que vai nos zips. |
+| `tools/resident_runtime.py` | **Residente** do banco `$0B` (despacho, tema, Menu Principal, loader de overlay) e montagem dos módulos `EDFC/OVL*.BIN`. |
+| `tools/art_runtime.py` | Trampolim (`$0100`) e módulo ART (capas + ESQ/DIR no menu do jogo). |
+| `tools/fav_runtime.py` | Front end de assembly (`asm_text`, `_call`…) e módulos FAV/REC (favoritos, recentes); gera os `.DAT` vazios. |
+| `tools/find_runtime.py` | Módulo BUSCA (teclado, varredura da pasta, resultados). |
+| `EDFC/OVL*.BIN` | Módulos gerados (precisam bater com o `OS.BIN`). |
+| `EDFC/FAVS.DAT`, `EDFC/RECENTS.DAT` | Listas vazias (32 slots) que vão nos zips. |
 | `tools/test_full_banner_system.py` | Monta a imagem do banco `$0B` (pacotes de tema, paletas, loader, capas). Nome histórico. |
 | `tools/banner_art.py` | Temas (nomes, paletas) e geração dos banners 256×16 por código. |
 | `tools/install_banner_theme.py` | Aplica banco 9 (tiles do tema 0), banco `$0B` e banco 15/hooks em `EDFC/OS.BIN`. |
 | `tools/nes_art.py` | Formato do arquivo de capa (2 KB), conversão PNG→NES, fingerprint (CRC). |
 | `tools/art_pack.py` | PC: baixa/converte capas do libretro (`build`) e instala no cartão (`install`). |
 | `tools/edfc_emu.py` | Emulador 6502 + PPU simplificado + BIOS/SD falsos (imagem FAT16 com LFN gerada de uma pasta). |
-| `tools/test_theme_safety.py`, `tools/test_game_art.py`, `tools/test_favorites.py` | Testes de regressão (rodar sempre). |
+| `tools/test_theme_safety.py`, `tools/test_game_art.py`, `tools/test_favorites.py`, `tools/test_search.py` | Testes de regressão (rodar sempre). |
 | `tools/capture_*_screenshots.py` | Capturas para README/release. |
 | `tools/package_releases.py`, `tools/create_github_release.py` | Empacotar (2 zips) e publicar release via `gh`. |
 | `translate_os_ptbr.py`, `tools/patch_font_and_strings.py` | Pipeline histórico da tradução (ver regra 7). |

@@ -1,5 +1,5 @@
 """
-End-to-end test for favourites (EDFC/FAVS.DAT).
+End-to-end test for favourites (EDFC/FAVS.DAT) and recently played games (EDFC/RECENTS.DAT).
 
 SD card (temp dir, FAT16 with 4 sectors/cluster so FAVS.DAT spans 8 clusters):
   * FAVS.DAT with slots 0..4 pre-filled (fake records "Dummy N") -> the first
@@ -16,6 +16,9 @@ Checks:
     OS DATA page $0300 unchanged, heap pointer $0450 restored,
     hardware stack never reached the trampoline (S > $B0)
   * card without FAVS.DAT: message, no SD writes at all
+  * Recentes: launching from the game menu writes the record + counter into RECENTS.DAT
+    (one sector), a second game takes the next slot, launching the first again bumps its
+    counter in the same slot; the Recentes screen lists the most recent first
 
 Usage: python tools/test_favorites.py
 """
@@ -53,6 +56,8 @@ def build_sd(root, favs=True):
     shutil.copy(os.path.join(REPO, "EDFC", "MAPROUT.BIN"), os.path.join(root, "EDFC"))
     for f in ("000.RBF", "001.RBF"):
         shutil.copy(os.path.join(REPO, "EDFC", "MAPS", f), os.path.join(root, "EDFC", "MAPS"))
+    for f in ("OVLART.BIN", "OVLFAV.BIN", "OVLREC.BIN", "OVLFIND.BIN", "RECENTS.DAT"):
+        shutil.copy(os.path.join(REPO, "EDFC", f), os.path.join(root, "EDFC"))
     open(os.path.join(root, "EDFC", "SAVE", "KEEP.TXT"), "wb").write(b"x")
     if favs:
         open(os.path.join(root, "EDFC", "FAVS.DAT"), "wb").write(prefilled_favs(5))
@@ -60,14 +65,33 @@ def build_sd(root, favs=True):
     open(os.path.join(root, "Beta Racer (World).nes"), "wb").write(make_rom(2))
 
 
-def fav_sectors(img):
-    """{slot: (byte offset, sector bytes)} found by the magic tail"""
-    out = {}
+def locate(img):
+    """(FAVS.DAT, RECENTS.DAT) as {slot: byte offset}: runs of sectors with the magic tail;
+    FAVS.DAT is the run whose slot 0 holds the pre-filled "Dummy 0" (None if absent)."""
+    runs = []
     for off in range(0, len(img), 512):
         sec = img[off:off + 512]
         if sec[FAV_TAIL + 1:FAV_TAIL + 9] == FAV_MAGIC:
-            out[sec[FAV_TAIL]] = (off, bytes(sec))
+            if sec[FAV_TAIL] == 0:
+                runs.append({})
+            runs[-1][sec[FAV_TAIL]] = off
+    fav = [r for r in runs if b"Dummy 0" in img[r[0]:r[0] + 64]]
+    rec = [r for r in runs if b"Dummy 0" not in img[r[0]:r[0] + 64]]
+    return (fav[0] if fav else None), (rec[0] if rec else None)
+
+
+def sectors(img, offs):
+    """{slot: (offset, sector bytes)} for one file, keeping only intact magic/slot sectors"""
+    out = {}
+    for k, off in offs.items():
+        sec = bytes(img[off:off + 512])
+        if sec[FAV_TAIL] == k and sec[FAV_TAIL + 1:FAV_TAIL + 9] == FAV_MAGIC:
+            out[k] = (off, sec)
     return out
+
+
+def counter(sec):
+    return sec[271] | sec[272] << 8 | sec[273] << 16
 
 
 def screen(emu):
@@ -112,14 +136,15 @@ def main():
                 min_s[0] = emu.S
             step()
         emu.step = stepper
-        emu.run_frames(40)
-        emu.press_button(A, wait_frames=40)
-        emu.run_frames(20)
+        emu.boot_to_browser()
         p3 = bytes(emu.ram[0x300:0x360]) + bytes(emu.ram[0x380:0x400])
         heap = emu.ram[0x450] | emu.ram[0x451] << 8
         img0 = bytes(emu.sd_img)
+        FAV, REC = locate(img0)
+        fav_sectors = lambda img: sectors(img, FAV)
         favs0 = fav_sectors(img0)
-        expect(sorted(favs0) == list(range(32)), "FAVS.DAT found on the emulated card (32 slots)")
+        expect(sorted(favs0) == list(range(32)) and REC and len(REC) == 32,
+               "FAVS.DAT and RECENTS.DAT found on the emulated card (32 slots each)")
 
         # --- add "Alpha Quest" from the game menu
         select_file(emu, "Alpha Quest")
@@ -158,7 +183,7 @@ def main():
         emu.press_button(START, wait_frames=60)
         txt = screen(emu)
         expect("Favoritos" in txt and "Op" in txt and "Sobre" in txt, "main menu lists Favoritos")
-        for _ in range(5):
+        for _ in range(2):
             emu.press_button(DOWN, wait_frames=15)
         emu.press_button(B, wait_frames=200)
         txt = screen(emu)
@@ -197,12 +222,16 @@ def main():
         emu.step = stepper
         expect(reached and reached[0] == rec, "confirm -> record restored at *$046A and $B7AC reached")
         expect(emu.ram[0x450] | emu.ram[0x451] << 8 == heap, "heap pointer restored before starting the game")
+        recs = sectors(bytes(emu.sd_img), REC)
+        expect(recs[0][1][:271] == rec and counter(recs[0][1]) == 1,
+               "the launched favourite was recorded in RECENTS.DAT slot 0 (counter 1)")
 
         # --- global safety
         img2 = bytes(emu.sd_img)
-        fav_offs = {o for o, _ in favs0.values()}
-        bad = [o for o in range(0, len(img0), 512) if img2[o:o + 512] != img0[o:o + 512] and o not in fav_offs]
-        expect(not bad, f"no sector outside FAVS.DAT changed ({bad[:4]})")
+        ok_offs = set(FAV.values()) | set(REC.values())
+        bad = [o for o in range(0, len(img0), 512) if img2[o:o + 512] != img0[o:o + 512] and o not in ok_offs]
+        expect(not bad, f"no sector outside FAVS.DAT / RECENTS.DAT changed ({bad[:4]})")
+        expect(len(sectors(img2, REC)) == 32, "RECENTS.DAT keeps its magic and slot bytes")
         favs3 = fav_sectors(img2)
         expect(sorted(favs3) == list(range(32)), "all 32 slots keep their magic and slot byte")
         expect((bytes(emu.ram[0x300:0x360]) + bytes(emu.ram[0x380:0x400])) == p3, "OS DATA page $0300 unchanged")
@@ -211,9 +240,7 @@ def main():
     with tempfile.TemporaryDirectory() as root:
         build_sd(root, favs=False)
         emu = EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root)
-        emu.run_frames(40)
-        emu.press_button(A, wait_frames=40)
-        emu.run_frames(20)
+        emu.boot_to_browser()
         img0 = bytes(emu.sd_img)
         select_file(emu, "Alpha Quest")
         emu.press_button(B, wait_frames=60)
@@ -223,13 +250,76 @@ def main():
         expect("Falta o EDFC/FAVS.DAT" in screen(emu), "no FAVS.DAT: message shown")
         emu.press_button(B, wait_frames=60)
         emu.press_button(START, wait_frames=60)
-        for _ in range(5):
+        for _ in range(2):
             emu.press_button(DOWN, wait_frames=15)
         emu.press_button(B, wait_frames=120)
         expect("Falta o EDFC/FAVS.DAT" in screen(emu), "no FAVS.DAT: Favoritos screen shows the message")
         emu.press_button(B, wait_frames=60)
         expect("Favoritos" in screen(emu), "back in the main menu")
         expect(bytes(emu.sd_img) == img0, "no FAVS.DAT: nothing written to the card")
+
+    # --- Recentes
+    with tempfile.TemporaryDirectory() as root:
+        build_sd(root)
+
+        def launch(img, name):
+            """new emulator on the card image, 'Carregar jogo' on name; returns (emu, record)"""
+            emu = EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root)
+            if img is not None:
+                emu.sd_img[:] = img
+            emu.boot_to_browser()
+            select_file(emu, name)
+            emu.press_button(B, wait_frames=60)
+            got, step = [], emu.step
+
+            def stop():
+                if emu.PC == 0xB7AC:
+                    p = emu.ram[0x46A] | emu.ram[0x46B] << 8
+                    got.append(bytes(emu.read(p + i) for i in range(271)))
+                    raise StopIteration
+                step()
+            emu.step = stop
+            try:
+                emu.press_button(B, wait_frames=300)
+            except StopIteration:
+                pass
+            emu.step = step
+            return emu, (got[0] if got else None)
+
+        emu, ra = launch(None, "Alpha Quest")
+        img0 = bytes(EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root).sd_img)
+        FAV, REC = locate(img0)
+        img1 = bytes(emu.sd_img)
+        r1 = sectors(img1, REC)
+        changed = [o for o in range(0, len(img0), 512) if img1[o:o + 512] != img0[o:o + 512]]
+        expect(ra and r1[0][1][:271] == ra and counter(r1[0][1]) == 1 and changed == [REC[0]],
+               f"Carregar jogo: record + counter 1 in RECENTS.DAT slot 0, one sector written ({changed})")
+        emu, rb = launch(img1, "Beta Racer")
+        img2 = bytes(emu.sd_img)
+        r2 = sectors(img2, REC)
+        expect(rb and r2[1][1][:271] == rb and counter(r2[1][1]) == 2 and r2[0][1] == r1[0][1],
+               "second game: slot 1, counter 2; slot 0 untouched")
+        emu, ra2 = launch(img2, "Alpha Quest")
+        img3 = bytes(emu.sd_img)
+        r3 = sectors(img3, REC)
+        expect(counter(r3[0][1]) == 3 and r3[1][1] == r2[1][1] and not any(
+            any(r3[k][1][:4]) for k in range(2, 32)), "same game again: its slot is bumped (counter 3), no new slot")
+        bad = [o for o in range(0, len(img0), 512) if img3[o:o + 512] != img0[o:o + 512] and o not in REC.values()]
+        expect(not bad, f"only RECENTS.DAT sectors written by launches ({bad[:4]})")
+        # Recentes screen: most recent first
+        emu = EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root)
+        emu.sd_img[:] = img3
+        emu.boot_to_browser()
+        emu.press_button(START, wait_frames=60)
+        for _ in range(3):
+            emu.press_button(DOWN, wait_frames=15)
+        emu.press_button(B, wait_frames=200)
+        txt = screen(emu)
+        pa, pb = txt.find("Alpha Quest"), txt.find("Beta Racer")
+        expect("Recentes" in txt and 0 <= pa < pb and "SELECT - remover da lista" in txt,
+               "Recentes screen: Alpha Quest (most recent) above Beta Racer")
+        emu.press_button(A, wait_frames=60)
+        expect("Menu Principal" in screen(emu), "cancel -> back to the main menu")
 
     print(f"\n{'PASSED' if failures == 0 else f'FAILED ({failures})'}")
     return failures

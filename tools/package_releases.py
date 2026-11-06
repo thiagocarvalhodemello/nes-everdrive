@@ -15,20 +15,29 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(REPO, "releases")
 
 # what goes on the card besides EDFC/MAPS: the OS, the mapper routing table, the mapper chart
-SD_FILES = ["EDFC/OS.BIN", "EDFC/MAPROUT.BIN", "EDFC/mappers.png", "EDFC/FAVS.DAT"]
+# EDFC/OVL*.BIN: code modules loaded by the OS (must come from the same build as OS.BIN)
+SD_FILES = ["EDFC/OS.BIN", "EDFC/MAPROUT.BIN", "EDFC/mappers.png", "EDFC/FAVS.DAT", "EDFC/RECENTS.DAT",
+            "EDFC/OVLART.BIN", "EDFC/OVLFAV.BIN", "EDFC/OVLREC.BIN", "EDFC/OVLFIND.BIN"]
 
 README_SD = """EverDrive N8 - OS PT-BR v{ver} (placas clone V3.1 / Cyclone II)
 
 Instalacao: extraia este .zip na RAIZ do cartao MicroSD (FAT16/FAT32).
-Deve ficar:  EDFC/OS.BIN, EDFC/MAPROUT.BIN, EDFC/FAVS.DAT, EDFC/MAPS/*.RBF, EDFC/SAVE/{arts}
+Deve ficar:  EDFC/OS.BIN, EDFC/OVL*.BIN, EDFC/MAPROUT.BIN, EDFC/FAVS.DAT,
+             EDFC/RECENTS.DAT, EDFC/MAPS/*.RBF, EDFC/SAVE/{arts}
+
+Ao ligar abre o Menu Principal: Lista de jogos, Busca, Favoritos, Recentes,
+Opcoes, Trapacas, Info Sistema, Info Mappers, Sobre.
 
 Controles no navegador de arquivos:
   A/B (confirmar)  menu do jogo: capa, Carregar jogo, Info da ROM, Favoritar
+                   (ESQ/DIR no menu do jogo: jogo anterior/proximo)
   SELECT           proximo tema (9 temas, fica salvo)
-  START            Menu Principal (Opcoes, Trapacas, Info Sistema, ..., Favoritos)
+  START            Menu Principal
 
-Favoritos ficam em EDFC/FAVS.DAT (ate 32). Ao ATUALIZAR o sistema, nao
-substitua o FAVS.DAT do cartao se quiser manter a sua lista.
+Os arquivos EDFC/OVL*.BIN sao partes do sistema: copie sempre junto com o OS.BIN.
+Favoritos ficam em EDFC/FAVS.DAT e os ultimos jogos em EDFC/RECENTS.DAT (ate 32
+cada). Ao ATUALIZAR o sistema, nao substitua esses dois arquivos do cartao se
+quiser manter as suas listas.
 """
 
 

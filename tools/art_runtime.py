@@ -21,11 +21,7 @@ tables and directory variables): that corrupted the file list until reboot.
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from theme_runtime import (assemble, build_runtime, B11_DISPATCH, B11_VARS, B11_CACHE, B11_DATA2, B11_PAL_TABLE,
-                           GAME_MENU_TABLE,
-                           FAR_ID, THEME_ID, NUM_THEMES, OS_REDRAW,
-                           FAR_INFO, FAR_MENU, FAR_MAIN, FAR_SEL, FAR_FAVADD)
-from fav_runtime import fav_listing, fav_symbols, DATA
+from theme_runtime import assemble, B11_DISPATCH, GAME_MENU_TABLE
 
 ART_MAIN = B11_DISPATCH     # bank $0B far code: dispatcher first
 ART_LIMIT = 0x8000          # end of bank $0B window
@@ -144,15 +140,11 @@ def _ppu_addr(hi, lo):
             (None, "LDA", "imm", lo), (None, "STA", "abs", 0x2006)]
 
 
-DATA2 = ("D_DUP", "D_FULL", "D_NOFILE", "D_MAGIC")   # strings kept in the gap before the palettes
-lab_data2 = []
-
-
-def build_main(tramp_len, sym):
+def art_module_listing():
+    """Overlay module ART (EDFC/OVLART.BIN): E0 ART_INFO, E1 ART_MENU (+ LEFT/RIGHT)."""
     L = [
         # ---- ART_INFO: record = ROM info function's buffer (word at C sp+1)
-        ("ART_INFO", "JSR", "abs", "SETUP"),
-        (None, "LDY", "imm", 1), (None, "LDA", "indy", 0x28), (None, "STA", "zp", 0x30),
+        ("ART_INFO", "LDY", "imm", 1), (None, "LDA", "indy", 0x28), (None, "STA", "zp", 0x30),
         (None, "INY", "imp", None), (None, "LDA", "indy", 0x28), (None, "STA", "zp", 0x31),
         (None, "JSR", "abs", "T_PEEK"),
         (None, "JSR", "abs", "LOAD"),
@@ -163,8 +155,7 @@ def build_main(tramp_len, sym):
         # ---- ART_MENU: index -> record via the OS, then the OS menu itself.
         # LEFT/RIGHT (menu result $FE/$FD, theme_runtime.menu_lr_code) move the browser
         # selection to the previous/next .NES/.FDS file and reopen the menu for it.
-        ("ART_MENU", "JSR", "abs", "SETUP"),
-        (None, "LDA", "imm", 0), (None, "STA", "abs", "V_DIR"),
+        ("ART_MENU", "LDA", "imm", 0), (None, "STA", "abs", "V_DIR"),
         (None, "JSR", "abs", "GETREC"),
         ("AM_SHOW", "BEQ", "rel", "GOTREC"),
         (None, "CMP", "imm", 0xA0), (None, "BNE", "rel", "NOREC"),
@@ -239,22 +230,6 @@ def build_main(tramp_len, sym):
         ("R3", "LDA", "abx", SAVE3), (None, "STA", "abx", 0x0300),
         (None, "DEX", "imp", None), (None, "BPL", "rel", "R3"),
         (None, "PLA", "imp", None),
-        (None, "RTS", "imp", None),
-        # ---- SETUP: trampoline -> $0100, save zero page scratch
-        ("SETUP", "LDX", "imm", tramp_len - 1),
-        ("CP", "LDA", "abx", "TSRC"), (None, "STA", "abx", T),
-        (None, "DEX", "imp", None), (None, "CPX", "imm", 0xFF), (None, "BNE", "rel", "CP"),
-        (None, "LDX", "imm", 3),
-        ("ZI", "LDA", "abx", C0), (None, "STA", "abx", "ZP"), (None, "DEX", "imp", None), (None, "BPL", "rel", "ZI"),
-        (None, "LDA", "zp", 0x30), (None, "STA", "abs", "ZP+4"), (None, "LDA", "zp", 0x31), (None, "STA", "abs", "ZP+5"),
-        (None, "RTS", "imp", None),
-        ("ZPOUT", "LDX", "imm", 3),
-        ("ZO", "LDA", "abx", "ZP"), (None, "STA", "abx", C0), (None, "DEX", "imp", None), (None, "BPL", "rel", "ZO"),
-        (None, "LDA", "abs", "ZP+4"), (None, "STA", "zp", 0x30), (None, "LDA", "abs", "ZP+5"), (None, "STA", "zp", 0x31),
-        (None, "RTS", "imp", None),
-        ("HIDE", "JSR", "abs", OS_WAIT_VBL),
-        (None, "LDA", "imm", 0x80), (None, "STA", "abs", 0x2000),
-        (None, "LDA", "imm", 0x0A), (None, "STA", "abs", 0x2001),
         (None, "RTS", "imp", None),
         # ---- LOAD: show the cover for cluster CLUS (sprites on) or leave the screen as it was
         ("LOAD", "JSR", "abs", OS_WAIT_VBL),
@@ -348,18 +323,6 @@ def build_main(tramp_len, sym):
           (None, "JSR", "abs", "RESTORE"),
           (None, "LDA", "imm", 0x0A), (None, "STA", "abs", 0x2001),
           (None, "RTS", "imp", None),
-          ("REOPEN", "LDA", "abs", BROWSE_DIR + 2), (None, "STA", "zp", 0x2A),
-          (None, "LDA", "abs", BROWSE_DIR + 3), (None, "STA", "zp", 0x2B),
-          (None, "LDA", "abs", BROWSE_DIR), (None, "LDX", "abs", BROWSE_DIR + 1),
-          (None, "JSR", "abs", PUSHEAX),
-          (None, "LDA", "imm", OS_OPEN_DIR & 0xFF), (None, "STA", "abs", "T_JSR+1"),
-          (None, "LDA", "imm", OS_OPEN_DIR >> 8), (None, "STA", "abs", "T_JSR+2"),
-          (None, "LDA", "abs", BROWSE_DIR), (None, "LDX", "abs", BROWSE_DIR + 1),
-          (None, "JMP", "abs", "T_CALL"),
-          ("RESTORE", "BIT", "abs", 0x2002), (None, "LDA", "imm", 0),
-          (None, "STA", "abs", 0x2006), (None, "STA", "abs", 0x2006),
-          (None, "STA", "abs", 0x2005), (None, "STA", "abs", 0x2005),
-          (None, "JMP", "abs", OS_WAIT_VBL),
           ("HEX2", "EOR", "imm", 0xFF),               # final CRC inversion
           (None, "PHA", "imp", None),
           (None, "LSR", "imp", None), (None, "LSR", "imp", None), (None, "LSR", "imp", None), (None, "LSR", "imp", None),
@@ -367,52 +330,4 @@ def build_main(tramp_len, sym):
           ("HEX1", "CMP", "imm", 10), (None, "BCC", "rel", "HD"), (None, "ADC", "imm", 6),
           ("HD", "ADC", "imm", 0x30), (None, "STA", "abx", "NAME11"), (None, "INX", "imp", None),
           (None, "RTS", "imp", None)]
-    # dispatcher + theme key + favourites first (DISPATCH must sit at B11_DISPATCH)
-    consts = dict(FAR_ID=FAR_ID, THEME_ID=THEME_ID, NUM_THEMES=NUM_THEMES, B11_CACHE=B11_CACHE)
-    L = fav_listing(build_runtime()[1]["APPLY"], consts) + L
-    sym = dict(sym, **fav_symbols(B11_VARS))
-    # layout: code | strings (DATA) | trampoline image (TSRC)
-    dummy = {n: 0 for n, _ in DATA}
-    code, _ = assemble(L, ART_MAIN, dict(sym, TSRC=0, **dummy))
-    dsym, a, data, data2 = {}, ART_MAIN + len(code), bytearray(), bytearray()
-    for n, b in DATA:
-        if n in DATA2:
-            dsym[n] = B11_DATA2 + len(data2)
-            data2 += b
-        else:
-            dsym[n] = a + len(data)
-            data += b
-    assert B11_DATA2 + len(data2) <= B11_PAL_TABLE, "DATA2 strings overlap the palettes"
-    lab_data2[:] = [bytes(data2)]
-    tsrc = ART_MAIN + len(code) + len(data)
-    code, lab = assemble(L, ART_MAIN, dict(sym, TSRC=tsrc, **dsym))
-    assert lab["DISPATCH"] == B11_DISPATCH
-    lab.update(dsym)
-    return code + bytes(data), lab
-
-
-def build_art_blob():
-    tramp, tlab = build_tramp()
-    code, lab = build_main(len(tramp), tlab)
-    blob = code + tramp
-    end = ART_MAIN + len(blob)
-    assert end <= SAVE3, f"art runtime too large: ends ${end:04X} > ${SAVE3:04X}"
-    lab.update({"_END": end, "_TRAMP": len(tramp)})
-    return blob, lab
-
-
-def install_into_bank11(b11):
-    """Place the art runtime into a bank $0B image (bytearray, 0x2000)."""
-    blob, lab = build_art_blob()
-    off = ART_MAIN - 0x6000
-    assert not any(b11[off:off + len(blob)]), "bank $0B area for art runtime is not free"
-    b11[off:off + len(blob)] = blob
-    d2, off2 = lab_data2[0], B11_DATA2 - 0x6000
-    assert not any(b11[off2:off2 + len(d2)]), "bank $0B DATA2 area is not free (theme data too big?)"
-    b11[off2:off2 + len(d2)] = d2
-    return lab
-
-
-if __name__ == "__main__":
-    blob, lab = build_art_blob()
-    print(f"art runtime ${ART_MAIN:04X}..${lab['_END']:04X} ({len(blob)} bytes, trampoline {lab['_TRAMP']})")
+    return L

@@ -770,6 +770,23 @@ class EverDriveN8Emu:
             if self.ppu_ctrl & 0x80:
                 self.trigger_nmi()
 
+    def boot_to_main_menu(self, max_frames=200):
+        """Run the boot until the OS shows the main menu (opened once after boot). True if seen."""
+        for _ in range(max_frames // 5):
+            self.run_frames(5)
+            if "Menu Principal" in self.dump_screen_text():
+                self.run_frames(5)
+                return True
+        return False
+
+    def boot_to_browser(self):
+        """Boot, then close the main menu shown after boot (A = cancel) -> file browser."""
+        seen = self.boot_to_main_menu()
+        if seen:
+            self.press_button(0x80, wait_frames=40)
+        self.run_frames(20)
+        return seen
+
     def press_button(self, btn_mask, hold_frames=1, wait_frames=15):
         self.run_frames(hold_frames, joy=btn_mask)
         self.ram[0x0484] = 0

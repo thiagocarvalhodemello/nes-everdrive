@@ -58,7 +58,7 @@ leitura-modifica-escrita no `$4401` — uma interrupção que mude o índice no 
 | :--- | :--- |
 | `$00–$FF` | zero page do OS. `$28/$29` = ponteiro da pilha C (cc65), `$2A/$2B` = sreg, `$30/$31` = ptr temporário, `$9A–$9D` = temporários do upload de tela (`$8343`), `$9E/$A0/$A1` = NMI, `$A2` = "upload de VRAM em andamento" |
 | `$0100–$01FF` | pilha do 6502; nunca desce de `$01DF` (medido também nos favoritos: `$01DB`) → **`$0100–$01AF` livre** (trampolim + variáveis, `art_runtime.T_LIMIT`) |
-| `$0200–$02FF` | zerada no reset e nunca lida pelo OS → **livre** (capas: registro do arquivo + tabela OAM; favoritos: `$0200` linha de texto, `$0220–$0248` clusters, buffer, nome `FAVS    DAT` — ver `fav_runtime.py`) |
+| `$0200–$02FF` | zerada no reset e nunca lida pelo OS → **livre** (capas: registro do arquivo + tabela OAM; listas: `$0200` linha de texto, `$0220–$024B` clusters, buffer, nome, contador; busca: `$0250` nome comparado; **`$0280–$02BF` tabela do Menu Principal** enquanto ele está aberto — ver `fav_runtime.py`) |
 | `$0300–$03FF` | **DATA do OS (cc65)**: tabelas de menu (`$03B3`, `$03B9`, `$03C1`, `$03C9`, `$03D5`), variáveis (`$0350–$037F`), rotina copiada (`$03E0+`). **Proibido escrever.** Imagem de origem no banco 15 a partir de `$F9DA` |
 | `$0400–$04DA` | BSS do OS (ponteiros globais, `$0464`/`$0466` = flags/ordem da lista, `$04B8` = nº de entradas, `$0484` = joypad, `$0486`/`$0487` = máscaras confirmar/cancelar, `$04D4` = redesenhar tela, `$046E` = cluster da pasta `/EDFC`) |
 | `$0500–$07FF` | pilha C (cresce para baixo a partir de `$0800`) |
@@ -101,10 +101,10 @@ argumento** (exatamente como o OS faz); quem é chamado desempilha. Helpers: `$F
 ## 5. Patches aplicados (fonte: `theme_runtime.os_patches`)
 | Endereço | Original | Novo |
 | :--- | :--- | :--- |
-| `$828C` | `JSR $83B0` (boot) | `JSR BOOT` — lê a assinatura e pede o tema salvo |
+| `$828C` | `JSR $83B0` (boot) | `JSR BOOT` — lê a assinatura e pede o tema salvo (sem assinatura: tema 0), para o IDLE rodar uma vez |
 | `$83F9` | fim da limpeza de tela | `JMP BANNER` — desenha o banner (linhas 0–1) + linha preta |
-| `$ABBD` | `JSR $EF47` | `JSR IDLE` — aplica o tema pedido no boot |
-| `$DBE7` | START = reiniciar último jogo | `JSR $CB50; JMP $D89E` (Menu Principal) |
+| `$ABBD` | `JSR $EF47` | `JSR IDLE` — aplica o tema pedido no boot e grava `$0484 = $10` (START "apertado": o navegador abre o Menu Principal uma vez após o boot) |
+| `$DBE7` | START = reiniciar último jogo | `JSR $DBED; JMP $D89E`; em `$DBED` (bytes mortos) o stub `H_START` (`LDA #5; JMP FAR`) |
 | `$DBFC` | SELECT = Menu Principal | `JSR H_SEL` (próximo tema + redesenho, no banco `$0B`) |
 | `$D579` | 3 itens | 3 itens: Carregar jogo, Info da ROM, Favoritar |
 | `$D5BA` | `CMP #$01` | `CMP #$02` (resultado 1 cai em Info da ROM, 2 em `$D5BD`) |
@@ -113,8 +113,11 @@ argumento** (exatamente como o OS faz); quem é chamado desempilha. Helpers: `$F
 | `$CFB2` | `JSR $9F6C` (Info da ROM) | `JSR H_INFO` (capa durante a espera) |
 | `$FA9F`, `$FAA1` | ponteiros "Apenas Selec." / item 2 | ponteiros "Info da ROM" / "Favoritar" |
 | `$F66A`, `$F679` | "Sel. e Iniciar", "Apenas Selec." | "Carregar jogo", "Favoritar" |
-| `$CB56`, `$CB5D` | tabela `$03C9`, 5 itens | `MAIN_TABLE` no banco 15 (+ "Favoritos"), 6 itens |
-| `$CBAF` | `LDY #0; LDA (sp),Y; BNE $CB55` | `JSR H_MAIN` (0 → Opções; 5 → tela de favoritos; resto → volta a `$CB55`) |
+| `$CB56`, `$CB5D` | tabela `$03C9`, 5 itens | tabela em `$0280` (página 2, copiada por `START`), 9 itens |
+| `$CB68` | `JSR $CA0D` | `JSR H_MMENU` (itens 0–3 nossos; 4–8 viram os itens 0–4 do OS) |
+| `$CBAF` | `LDY #0; LDA (sp),Y; BNE $CB55` | original (a v1.6 tinha `JSR H_MAIN` aqui) |
+| `$D5B1` | `JSR $B7AC` ("Carregar jogo") | `JSR H_LAUNCH` (grava em Recentes e então `$B7AC`) |
+| `$CA41`, `$CAC1`, `$CAC2` (em tempo de execução) | 1ª linha `$0B - n`, linha `+= 2` | só durante o Menu Principal: `$0F - n` e `+= 1` (`LDY #2; TYA; LSR; ADC`) — 9 itens não cabem na caixa do `$CA0D`; o `MMENU` restaura os bytes logo depois |
 | `$C81F`, `$C833` | atributos da barra de status: linha 6 = `$FF` (linhas 24–27) | linha 7 = `$0F` (linhas 28–29, fim da tela, 2 linhas de altura) |
 | `$C8BF`, `$C8C7`, `$C8DF`, `$C941` | nome selecionado nas linhas `$17`/`$18` (tela 25/26) | `$1A`/`$1B` (tela 28/29) |
 | `$8442`, `$8449` (banco 12) | upload parcial ao mover o cursor: PPU `$2320` ← `$6320` | PPU `$2380` ← `$6380` |
@@ -128,30 +131,61 @@ argumento** (exatamente como o OS faz); quem é chamado desempilha. Helpers: `$F
 ### Banco 15, região `$FAE4–$FBFD` (`theme_runtime.build_runtime`)
 `$FAE4` id da chamada longa, `$FAE5` tema atual, `$FAE6` tema pedido (bit 7 = forçar). Rotinas:
 `BANNER`/`BANNER_BODY`, `BOOT`, `APPLY` (paleta + tiles via loader do banco `$0B`, banner, assinatura),
-`IDLE`, stubs `H_INFO`/`H_MENU`/`H_MAIN`/`H_SEL`/`H_FAVADD` (`LDA #id; JMP FAR`; `FAR` grava o id,
-mapeia `$0B` e salta para `DISPATCH`), `MAIN_TABLE` (título + 6 itens do Menu Principal) e "Favoritos".
+`IDLE`, stubs `H_INFO`/`H_MENU`/`H_MMENU`/`H_SEL`/`H_LAUNCH`/`H_FAVADD` (`LDA #id; JMP FAR`; `FAR` grava o id,
+mapeia `$0B` e salta para `DISPATCH`). Ids: 0 INFO, 1 MENU, 2 MMENU, 3 SEL, 4 FAVADD, 5 START (stub em `$DBED`),
+6 LAUNCH. Usado: 271/282 bytes.
 
 ### Banco `$0B` (montado em `test_full_banner_system.build_bank11_image`)
 | Endereço | Conteúdo |
 | :--- | :--- |
 | `$6000` | ponteiros dos 9 pacotes |
 | `$6012…` | pacotes: nametable 64 B (linhas 0–1) + nº de tiles + (slot, 16 B) por tile (até `$6E10`) |
-| `$6E10` | textos dos favoritos que não cabem no fim do banco (`art_runtime.DATA2`) |
+| `$6E10` | tabela + textos do Menu Principal (origem da cópia para `$0280`) e "Falta EDFC/OVL*.BIN" (80 B, cheio) |
 | `$6E60` | paletas dos temas (9 × 16 cores, `banner_art.palette16`) |
-| `$6F00` | loader (paleta + tiles; usa `$9A–$9D`), até `$6FBF` |
-| `$6FC0` | variáveis dos favoritos (16 B, `fav_runtime.VARS_SRC`; `V_DIR` = ESQ/DIR do menu do jogo) |
-| `$6FD0` | cache de nomes dos favoritos: 32 × 32 B (nome 28 + NUL, byte 31 = slot) |
-| `$73D0` | código longo: `DISPATCH`, `SELT`, `MAIN`, `FAVADD`, tela de favoritos, capas, textos, imagem do trampolim (até ~`$7F49`) |
-| `$7FE0` | rascunho: cópia de `$0300–$030F` durante `$BC71` |
+| `$6F00` | loader (paleta + tiles; usa `$9A–$9D`), até `$6FB3` |
+| `$6FB8` | `OVL_CUR` (overlay carregado; 0 no boot), `V_MSEL` (item do Menu Principal), `OVL_WANT` |
+| `$6FC0` | variáveis das listas (16 B, `fav_runtime.VARS_SRC`; `V_DIR` = ESQ/DIR do menu do jogo) |
+| `$6FD0` | cache das listas/resultados: 32 × 32 B (nome 27 + NUL, contador 28–30, slot/índice 31) |
+| `$73D0` | **residente** (`resident_runtime.py`): `DISPATCH`, `SELT`, `R_INFO`/`R_MENU`/`R_FAVADD`, `LAUNCH`, `START`, `MMENU`, `OVL`, `CALLI`, `SETUP`…, `SHOWMSG`/`PUTS`, `ENTRY`, imagem do trampolim (até ~`$7850`) |
+| `$7900` | **área de overlay** (até `$7FDF`): o módulo carregado do SD (`OVL_BASE` = 1ª página após o residente) |
+| `$7FE0` | rascunho: cópia de `$0300–$030F` durante `$BC71` (módulo ART) |
 
-### Capas (`art_runtime.py`)
+### Overlays (`resident_runtime.py`)
+O banco `$0B` não comporta tudo, então capas, favoritos, recentes e busca são **módulos** em arquivos
+`EDFC/OVLART.BIN`, `OVLFAV.BIN`, `OVLREC.BIN`, `OVLFIND.BIN`, montados para `OVL_BASE` e gerados por
+`install_banner_theme.py` junto com o `OS.BIN`. Cabeçalho: `'O'`, id, build id (2 bytes, hash dos
+símbolos do residente — um arquivo de outra build é recusado), depois a tabela de `JMP`s.
+`OVL(id)`: se `OVL_CUR` ≠ id, acha o arquivo em `/EDFC` (`$9DC7`), desliga a renderização, lê os setores
+com `$9541` para a CHR `$1000` (não usada pelo OS), copia do PPU para o banco `$0B`, confere o cabeçalho,
+religa a tela e reabre a pasta do navegador. Sem o arquivo: capas e ESQ/DIR somem (menu normal do OS);
+as listas/busca mostram "Falta EDFC/OVL*.BIN". Os módulos não chamam `SETUP` (o residente chama antes de
+`OVL`); chamadas ao OS usam `JSR CALLI` + 3 bytes (destino, A), que preserva X/Y.
+
+### Menu Principal, Recentes e Busca
+- **Boot**: `BOOT` sempre pede um tema; o primeiro `IDLE` aplica e grava `$0484 = $10`; o laço do
+  navegador lê isso como START → `START` copia a tabela para `$0280` e chama `$CB50`.
+- **`MMENU`** (no `$CB68`): restaura o cursor (`V_MSEL`), ajusta o espaçamento do `$CA0D`, chama;
+  0 Lista de jogos e cancelar → `$FF` (fecha); 1 Busca, 2 Favoritos, 3 Recentes → módulo, depois `$847C`,
+  empilha de novo os argumentos e reabre; 4–8 → devolve 0–4 para o despacho original do OS.
+- **Recentes** (`OVLREC`): `RECENTS.DAT` no mesmo formato do `FAVS.DAT` + contador de 24 bits nos bytes
+  271–273. `RECADD` (antes de todo início de jogo: `$D5B1`, favoritos, a própria lista) grava no slot do mesmo
+  jogo, senão no primeiro vazio, senão no de menor contador, com contador = maior + 1 (uma gravação por
+  início). A tela ordena o cache pelo contador (bolha).
+- **Favoritos** (`OVLFAV`): confirmar devolve C=1 com o registro em `*$046A`; o residente (`LAUNCH_GO`)
+  carrega `OVLREC`, grava em Recentes e inicia.
+- **Busca** (`OVLFIND`): teclado 10×4, consulta até 18 caracteres. Varre os índices de arquivo 0..n-1
+  (ordem do diretório, aproveita o cache de setor do OS) com `$BC71` num buffer de 512 B do heap, compara
+  sem diferenciar maiúsculas, até 32 resultados no cache. Escolher um resultado procura a posição na
+  tabela `*$0466`, grava `$8276`, pede redesenho (`$04D4`) e fecha o menu.
+
+### Capas (`art_runtime.py`, módulo ART)
 Trampolim copiado para `$0100` (mapeia banco 8 só durante chamadas ao OS e volta para `$0B`).
 Fluxo: registro → cluster → lê setores 0–4 da ROM para o PPU `$1000` → CRC-32 dos bytes 512–2559
 (lidos de volta do PPU) → `EDFC/ARTS/<CRC>.BIN` → 4 setores para `$1000` → metadados em `$1600`
 → OAM em `$0200` + DMA → sprites 8×16 (`$2000=$A0`, `$2001=$1E`); ao sair `$2000=$80`, `$2001=$0A`.
 Formato do arquivo: ver docstring de `nes_art.py`. A tabela de padrões `$1000` não é usada pelo OS.
 
-### Favoritos (`fav_runtime.py`)
+### Favoritos (`fav_runtime.py`, módulos FAV/REC)
 Arquivo `EDFC/FAVS.DAT` (16 KB) criado no PC e enviado no zip — o console **nunca cria, aumenta ou
 renomeia arquivo** (sem escrita em FAT/diretório). Setor K = slot K: bytes 0–270 = cópia do registro
 de `$BF16`; cluster 0 = vazio; byte 503 = K; 504–511 = `EDFCFAV1`. Antes de **toda** gravação o setor
@@ -165,7 +199,7 @@ malloc do OS (recusa se `$0450` ≥ `$7C00`), liberado antes de voltar ao OS ou 
   novo índice em `(sp),0` (o `$D556` usa esse valor para carregar/Info/Favoritar), chama `$C7E2(0)`, empilha de
   novo os argumentos do menu (`$03C1`, 3, 0) e reabre capa + menu.
 - **Favoritos** (Menu Principal): lista em ordem de slot; cima/baixo, confirmar copia o registro para
-  `*$046A` e chama `$B7AC`; SELECT zera o cluster do slot; cancelar volta ao menu (`$847C` + `$CB55`).
+  `*$046A` (e o residente grava em Recentes + `$B7AC`); SELECT zera o cluster do slot; cancelar volta ao menu.
 
 ### CHR e tela
 Slots livres da fonte para tiles de banner: `$0B–$1E` e `$8B–$9F`; `$1F` = tile vazio (linha 2).

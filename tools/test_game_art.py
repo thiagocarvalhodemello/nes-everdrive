@@ -49,6 +49,8 @@ def build_sd(root, art_rom, plain_rom, art):
     shutil.copy(os.path.join(REPO, "EDFC", "MAPROUT.BIN"), os.path.join(root, "EDFC"))
     for f in ("000.RBF", "001.RBF"):
         shutil.copy(os.path.join(REPO, "EDFC", "MAPS", f), os.path.join(root, "EDFC", "MAPS"))
+    for f in ("OVLART.BIN", "OVLFAV.BIN", "OVLREC.BIN", "OVLFIND.BIN", "RECENTS.DAT"):
+        shutil.copy(os.path.join(REPO, "EDFC", f), os.path.join(root, "EDFC"))
     open(os.path.join(root, "EDFC", "SAVE", "KEEP.TXT"), "wb").write(b"x")
     open(os.path.join(root, "Test Game With Art (World).nes"), "wb").write(art_rom)
     open(os.path.join(root, "ZZ No Art (World).nes"), "wb").write(plain_rom)
@@ -135,9 +137,7 @@ def main(shot=None):
         build_sd(root, art_rom, plain_rom, art)
         emu = EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root)
         watch = Watch(emu)
-        emu.run_frames(40)
-        emu.press_button(0x80, wait_frames=40)
-        emu.run_frames(20)
+        emu.boot_to_browser()
         p3 = page3(emu)
 
         # --- game menu: cover + "Carregar jogo" + "Info da ROM"
@@ -223,9 +223,7 @@ def main(shot=None):
     with tempfile.TemporaryDirectory() as root:
         build_sd(root, art_rom, plain_rom, art)
         emu = EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root)
-        emu.run_frames(40)
-        emu.press_button(0x80, wait_frames=40)
-        emu.run_frames(20)
+        emu.boot_to_browser()
 
         # --- "Carregar jogo" starts the game through the OS ($BF16 select, $B7AC start)
         open_game_menu(emu, "Test Game")

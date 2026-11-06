@@ -41,9 +41,7 @@ def main():
             else:
                 print(f"  no art for {r}")
         emu = EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root)
-        emu.run_frames(40)
-        emu.press_button(0x80, wait_frames=40)
-        emu.run_frames(20)
+        emu.boot_to_browser()
         for n, r in enumerate(a.roms):
             name = os.path.splitext(os.path.basename(r))[0]
             open_game_menu(emu, name[:20])

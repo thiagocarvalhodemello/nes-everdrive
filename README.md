@@ -3,7 +3,7 @@
 [![GitHub Releases](https://img.shields.io/github/v/release/thiagocarvalhodemello/nes-everdrive?style=flat-square)](https://github.com/thiagocarvalhodemello/nes-everdrive/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 
-Tradução completa para Português do Brasil (PT-BR) do Sistema Operacional do flashcart **EverDrive N8 / Famicom** (por Igor Golubovskiy / Krikzz), para placas clone baseadas em Altera Cyclone II e MAX II CPLD (revisão `V3.1 2024.07`), com **9 temas com banner**, **menu do jogo com capa**, **favoritos** e troca de tema por um botão.
+Tradução completa para Português do Brasil (PT-BR) do Sistema Operacional do flashcart **EverDrive N8 / Famicom** (por Igor Golubovskiy / Krikzz), para placas clone baseadas em Altera Cyclone II e MAX II CPLD (revisão `V3.1 2024.07`), com **9 temas com banner**, **menu do jogo com capa**, **busca**, **favoritos**, **jogos recentes** e troca de tema por um botão.
 
 ![Menu do jogo com capas](docs/screenshots/art_grid.png)
 
@@ -11,14 +11,24 @@ Tradução completa para Português do Brasil (PT-BR) do Sistema Operacional do 
 
 ## 🎮 Downloads (Releases)
 
-Na aba [**Releases**](https://github.com/thiagocarvalhodemello/nes-everdrive/releases) (versão atual: **v1.6**) há dois arquivos. Escolha **um** e extraia na **raiz** do cartão MicroSD (FAT16/FAT32):
+Na aba [**Releases**](https://github.com/thiagocarvalhodemello/nes-everdrive/releases) (versão atual: **v1.7**) há dois arquivos. Escolha **um** e extraia na **raiz** do cartão MicroSD (FAT16/FAT32):
 
 | Arquivo | Conteúdo |
 | :--- | :--- |
-| `EDFC-N8-PTBR-v1.6-com-capas.zip` | Sistema completo **+ 2.504 capas** (`EDFC/ARTS/`). |
-| `EDFC-N8-PTBR-v1.6.zip` | Sistema completo, sem capas. |
+| `EDFC-N8-PTBR-v1.7-com-capas.zip` | Sistema completo **+ 2.504 capas** (`EDFC/ARTS/`). |
+| `EDFC-N8-PTBR-v1.7.zip` | Sistema completo, sem capas. |
 
 As capas são identificadas pelo **conteúdo** da ROM (não pelo nome do arquivo), então funcionam com dumps padrão No-Intro/GoodNES. A versão para **hardware original Krikzz (base v1.26)** continua na [release v1.3](https://github.com/thiagocarvalhodemello/nes-everdrive/releases/tag/v1.3-ptbr).
+
+---
+
+## 📋 Menu Principal
+
+Ao ligar, o console abre o **Menu Principal**; **START** no navegador abre de novo.
+
+![Menu Principal](docs/screenshots/menu_principal.png)
+
+**Lista de jogos** (fecha o menu e mostra a pasta) · **Busca** · **Favoritos** · **Recentes** · Opções · Trapaças · Info Sistema · Info Mappers · Sobre
 
 ---
 
@@ -28,7 +38,7 @@ As capas são identificadas pelo **conteúdo** da ROM (não pelo nome do arquivo
 | :--- | :--- |
 | **A / B** (confirmar) | Abre a pasta, ou o **menu do jogo**: capa + `Carregar jogo` + `Info da ROM` + `Favoritar` |
 | **SELECT** | Próximo tema (9 temas, em ciclo); o tema fica salvo e volta no próximo boot |
-| **START** | **Menu Principal**: Opções, Trapaças, Info Sistema, Info Mappers, Sobre, **Favoritos** |
+| **START** | **Menu Principal** |
 | **ESQ / DIR** | Página anterior / próxima da lista; **dentro do menu do jogo**, jogo anterior / próximo |
 
 O botão de confirmar segue a opção "inverter A/B" do menu Opções.
@@ -73,6 +83,33 @@ Capas: [libretro-thumbnails](https://github.com/libretro-thumbnails/Nintendo_-_N
 
 ---
 
+## 🕘 Recentes
+
+![Recentes](docs/screenshots/recentes.png)
+
+* Os últimos **32 jogos** iniciados, do mais recente para o mais antigo. Vale para **Carregar jogo**,
+  para os favoritos e para a própria lista.
+* **Confirmar** inicia o jogo, e **SELECT** tira o jogo da lista.
+* Ficam no `EDFC/RECENTS.DAT`, com a mesma proteção do `FAVS.DAT`: cada início de jogo regrava **um**
+  setor desse arquivo. Ao atualizar, não substitua o arquivo do cartão.
+
+---
+
+## 🔍 Busca
+
+| | |
+| :---: | :---: |
+| ![Teclado da busca](docs/screenshots/busca_teclado.png)<br>**Menu Principal → Busca** | ![Resultados](docs/screenshots/busca_resultados.png)<br>**Resultados** |
+
+* Teclado na tela: o **direcional** escolhe a letra, **confirmar** digita, **SELECT** apaga, **START** busca
+  e **cancelar** volta.
+* Procura o trecho digitado em **qualquer parte do nome**, sem diferenciar maiúsculas, na **pasta aberta**
+  no navegador (até 32 resultados).
+* Ao confirmar um resultado, o navegador para em cima do jogo, e daí o **menu do jogo** abre com a capa.
+* Só lê o cartão.
+
+---
+
 ## 🎨 Temas
 
 9 temas com banner próprio, trocados com **SELECT** (capturas do emulador, `python tools/capture_theme_screenshots.py`):
@@ -102,7 +139,9 @@ MicroSD (Raiz)/
 └── EDFC/
     ├── OS.BIN              # Sistema Operacional PT-BR (temas, menu do jogo, capas)
     ├── MAPROUT.BIN         # Tabela de roteamento de mappers (512 bytes)
+    ├── OVL*.BIN            # Módulos do sistema (capas, favoritos, recentes, busca): copie junto com o OS.BIN
     ├── FAVS.DAT            # Favoritos (32 slots, 16 KB)
+    ├── RECENTS.DAT         # Jogos recentes (32 slots, 16 KB)
     ├── mappers.png         # Tabela de referência dos mappers suportados
     ├── MAPS/               # 31 núcleos FPGA (.RBF)
     ├── SAVE/               # Saves de bateria (obrigatória)
@@ -117,10 +156,11 @@ Requisitos: **Python 3.x** (+ Pillow e NumPy para as capas).
 
 ```bash
 python translate_os_ptbr.py            # tradução sobre a base original
-python tools/install_banner_theme.py   # temas, banners, menu do jogo, capas, botões
+python tools/install_banner_theme.py   # OS.BIN + EDFC/OVL*.BIN (temas, menu, capas, listas, busca)
 python tools/test_theme_safety.py      # testes no emulador do projeto
 python tools/test_game_art.py
-python tools/test_favorites.py
+python tools/test_favorites.py         # favoritos e recentes
+python tools/test_search.py
 ```
 
 Guia para quem for manter o projeto (pessoas ou agentes de IA): [`AGENTS.md`](AGENTS.md), com arquitetura, receitas e histórico de bugs em [`docs/dev/`](docs/dev/).

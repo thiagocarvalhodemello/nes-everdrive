@@ -5,11 +5,13 @@ Todos os comandos rodam na raiz do repositório.
 
 ## Build e testes (sempre)
 ```bash
-python tools/install_banner_theme.py   # aplica tudo em EDFC/OS.BIN (idempotente)
+python tools/install_banner_theme.py   # aplica tudo em EDFC/OS.BIN e gera EDFC/OVL*.BIN (idempotente)
 python tools/test_theme_safety.py      # deve terminar em PASSED
 python tools/test_game_art.py          # deve terminar em PASSED
 python tools/test_favorites.py         # deve terminar em PASSED
+python tools/test_search.py            # deve terminar em PASSED
 ```
+`python tools/resident_runtime.py` mostra o tamanho do residente e de cada módulo.
 Rodar o install duas vezes não muda nada; se `git diff EDFC/OS.BIN` mostrar diferença sem você ter
 mudado código, algo está errado.
 
@@ -37,20 +39,27 @@ Estado atual (ver ARQUITETURA §5):
   precisa de outra string (keystream novo em `theme_runtime.KEYSTREAM`), de um 4º ponteiro — a
   tabela DATA não tem espaço: mova-a para o banco 15 como foi feito com o Menu Principal — e de
   despacho novo. O menu genérico `$CA0D` comporta ~8 itens.
-- **Menu Principal**: tabela `MAIN_TABLE` na nossa região do banco 15 (texto plano, sem keystream),
-  quantidade em `$CB5D`, despacho do resultado ≥ 5 em `MAIN` (`fav_runtime.py`).
+- **Menu Principal**: `resident_runtime.main_table_data()` (copiada para `$0280` pelo `START`;
+  `$6E10` está cheio — para mais itens, mova os textos), quantidade `MAIN_ITEMS` (`$CB5D`), mapeamento
+  dos resultados em `MMENU` (0–3 nossos, 4–8 → itens 0–4 do OS). O `MMENU` ajusta o espaçamento do
+  `$CA0D` (1 linha) só durante o Menu Principal; cabem ~12 itens.
 
-Código novo vai no banco `$0B` (`fav_runtime.py`, texto assembly via `asm_text`): crie um stub
-`H_X` em `theme_runtime.build_runtime` (`LDA #id; JMP FAR`), um ramo no `DISPATCH` e retorne sempre
-por `JMP T_EXIT` (depois de `JSR ZPOUT`). Chamadas ao OS só via trampolim (`T_CALL`, macro `_call`),
-pois o OS precisa do banco 8 mapeado. Textos que o OS vai ler precisam estar na RAM interna
-(`STRBUF`) ou no banco 15. Registre os patches em `os_patches()` e acrescente teste.
+Código novo: **módulo de overlay** (o residente está quase cheio). Escreva o módulo em texto
+(`asm_text`, como `find_runtime.module_find`), registre em `resident_runtime.OVL_FILES` e em
+`build_all()`, e chame do residente com `LDA #id; JSR OVL; BCS erro; JSR OVL_BASE+4+3*k`. O módulo não
+chama `SETUP` (o residente chama antes do `OVL`), usa o cache `$6FD0` e as variáveis `V_*` à vontade e
+não pode carregar outro módulo (ele seria sobrescrito: devolva um código para o residente fazer o resto,
+como os favoritos fazem com `LAUNCH_GO`). Um ponto novo no OS ainda precisa de um stub `H_X` no banco 15
+(`LDA #id; JMP FAR`) e de um ramo na tabela `DJT` do `DISPATCH`; retorne por `JSR ZPOUT; JMP T_EXIT`.
+Chamadas ao OS só via trampolim (`_call` = `JSR CALLI` + 3 bytes), pois o OS precisa do banco 8
+mapeado. Textos que o OS vai ler precisam estar na RAM interna (`STRBUF`, via `PUTS`) ou no banco 15.
+Registre os patches em `os_patches()` e acrescente teste.
 Atenção: a capa fica visível enquanto o menu (`$CA0D`) roda e é escondida quando ele retorna.
 
-## Favoritos
-- `EDFC/FAVS.DAT` é gerado por `fav_runtime.favs_dat()` (32 slots vazios) e vai nos zips.
-  Recriar: `python -c "import sys; sys.path.insert(0,'tools'); from fav_runtime import favs_dat; open('EDFC/FAVS.DAT','wb').write(favs_dat())"`.
-- Ao atualizar o sistema o usuário deve manter o `FAVS.DAT` dele (avise nas notas da release).
+## Favoritos e Recentes
+- `EDFC/FAVS.DAT` e `EDFC/RECENTS.DAT` vêm de `fav_runtime.favs_dat()` (32 slots vazios) e vão nos zips;
+  o install cria os que faltarem (nunca sobrescreve).
+- Ao atualizar o sistema o usuário deve manter os `.DAT` dele (avise nas notas da release).
 - Nunca grave no SD sem ler o mesmo setor antes e conferir slot + `EDFCFAV1` (ver `F_READ`/`F_WRITE`).
 
 ## Capas
@@ -84,9 +93,12 @@ Atenção: a capa fica visível enquanto o menu (`$CA0D`) roda e é escondida qu
 
 ## Checklist de teste no hardware (o emulador não pega timing)
 - Trocar tema várias vezes com SELECT; a lista e o banner continuam corretos.
-- START → Menu Principal; fechar volta ao navegador.
+- Ligar: o Menu Principal abre sozinho; "Lista de jogos" e cancelar voltam ao navegador; START reabre.
+- Busca numa pasta grande (100+ jogos): tempo aceitável, resultado certo, o navegador para no jogo.
+- ESQ/DIR no menu do jogo troca de jogo (capa e nome acompanham).
+- Iniciar 2–3 jogos e abrir Recentes (mais recente primeiro).
 - Confirmar num jogo com capa e num sem capa; "Info da ROM"; "Carregar jogo" inicia o jogo.
 - Reiniciar: o tema volta.
 - Favoritar 2–3 jogos, abrir START → Favoritos, iniciar um e remover outro com SELECT; depois
-  conferir o cartão no PC (`chkdsk`/scandisk sem erros, `FAVS.DAT` continua com 16 KB).
+  conferir o cartão no PC (`chkdsk`/scandisk sem erros, `FAVS.DAT`/`RECENTS.DAT` continuam com 16 KB).
 - Copiar arquivos para o cartão depois de usar o menu (nenhuma corrupção no PC).
