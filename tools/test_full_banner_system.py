@@ -3,7 +3,7 @@ import os, sys, struct, zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from edfc_emu import EverDriveN8Emu, save_png, NES_PALETTE
 from banner_art import build_banner_packages, THEMES, palette16
-from theme_runtime import B11_LOADER, B11_PAL_TABLE, B11_VARS, NT_BYTES
+from theme_runtime import B11_LOADER, B11_PAL_TABLE, B11_VARS, B11_DATA2, NT_BYTES
 from art_runtime import ART_MAIN, install_into_bank11
 
 # Opcode dictionary for assembler
@@ -99,7 +99,7 @@ def build_bank11_image(packages):
         b11[ptr_offset + i*2 + 1] = (ptr >> 8) & 0xFF
         
     print(f"Bank 0x0B theme data ends at offset 0x{data_offset:04X} (CPU: ${0x6000+data_offset:04X})")
-    assert data_offset <= PAL_TABLE - 0x6000, "Theme data exceeds Bank 0x0B space!"
+    assert data_offset <= B11_DATA2 - 0x6000, "Theme data exceeds Bank 0x0B space (up to B11_DATA2)!"
 
     # Palette table: 16 bytes per theme (the full PPU background palette, see banner_art)
     pal_table_offset = PAL_TABLE - 0x6000

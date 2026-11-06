@@ -145,6 +145,7 @@ def _puts(sym, hl=False):
 VARS_SRC = {
     "V_K": 0, "V_NFAV": 1, "V_CUR": 2, "V_TOP": 3, "V_FREE": 4, "V_FOUND": 5,
     "V_I": 6, "V_BTN": 7, "V_LBA": 8, "V_MSG": 12,
+    "V_DIR": 14,        # art_runtime: game menu LEFT/RIGHT ($FE/$FD), 0 = normal entry
 }
 
 DATA = [

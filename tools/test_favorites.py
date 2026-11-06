@@ -76,7 +76,7 @@ def screen(emu):
 
 def select_file(emu, prefix):
     for _ in range(30):
-        line = [l for l in screen(emu).split("\n") if l.startswith("25:")]
+        line = [l for l in screen(emu).split("\n") if l.startswith("28:")]
         if line and prefix in line[0]:
             return
         emu.press_button(DOWN, wait_frames=15)

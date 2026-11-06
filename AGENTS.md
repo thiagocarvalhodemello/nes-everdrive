@@ -26,8 +26,9 @@ Leia antes de mexer:
    variáveis da listagem). Nunca escreva lá (v1.4 escrevia e corrompia a lista até reiniciar).
    Áreas livres: `$0100–$01AF` (pilha nunca desce de `$01DB`) e `$0200–$02FF`.
 5. **Espaço é escasso e tem orçamento**: banco 15 `$FAE4–$FBFD` (282 B, usado 281), banco `$0B`
-   (dados de tema ≤ `$6E60`, paletas `$6E60–$6EEF`, loader ≤ `$6FC0`, variáveis/cache dos favoritos
-   `$6FC0–$73CF`, código longo ≤ `$7FE0`), trampolim ≤ `$01B0`. Os scripts têm `assert` — não os remova.
+   (dados de tema ≤ `$6E10`, textos `DATA2` `$6E10–$6E5F`, paletas `$6E60–$6EEF`, loader ≤ `$6FC0`, variáveis/cache dos favoritos
+   `$6FC0–$73CF`, código longo ≤ `$7FE0`, sobram ~5 bytes), trampolim ≤ `$01B0`.
+   Banco 14 `$D5DE–$D5E0`: 3 bytes livres. Os scripts têm `assert` — não os remova.
 6. **Banco 12 e 15 são criptografados** (XOR por posição). Patch = `plano ^ keystream`. Bancos 13/14 não.
    Veja a seção "Criptografia" em ARQUITETURA.md antes de alterar qualquer byte fora da região livre.
 7. **`EDFC/OS.BIN` commitado é a fonte da verdade.** `tools/install_banner_theme.py` aplica todos os

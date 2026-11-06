@@ -60,7 +60,7 @@ leitura-modifica-escrita no `$4401` — uma interrupção que mude o índice no 
 | `$0100–$01FF` | pilha do 6502; nunca desce de `$01DF` (medido também nos favoritos: `$01DB`) → **`$0100–$01AF` livre** (trampolim + variáveis, `art_runtime.T_LIMIT`) |
 | `$0200–$02FF` | zerada no reset e nunca lida pelo OS → **livre** (capas: registro do arquivo + tabela OAM; favoritos: `$0200` linha de texto, `$0220–$0248` clusters, buffer, nome `FAVS    DAT` — ver `fav_runtime.py`) |
 | `$0300–$03FF` | **DATA do OS (cc65)**: tabelas de menu (`$03B3`, `$03B9`, `$03C1`, `$03C9`, `$03D5`), variáveis (`$0350–$037F`), rotina copiada (`$03E0+`). **Proibido escrever.** Imagem de origem no banco 15 a partir de `$F9DA` |
-| `$0400–$04DA` | BSS do OS (ponteiros globais, `$0484` = joypad, `$0486`/`$0487` = máscaras confirmar/cancelar, `$04D4` = redesenhar tela, `$046E` = cluster da pasta `/EDFC`) |
+| `$0400–$04DA` | BSS do OS (ponteiros globais, `$0464`/`$0466` = flags/ordem da lista, `$04B8` = nº de entradas, `$0484` = joypad, `$0486`/`$0487` = máscaras confirmar/cancelar, `$04D4` = redesenhar tela, `$046E` = cluster da pasta `/EDFC`) |
 | `$0500–$07FF` | pilha C (cresce para baixo a partir de `$0800`) |
 
 ## 4. API do OS usada pelos patches
@@ -89,7 +89,8 @@ argumento** (exatamente como o OS faz); quem é chamado desempilha. Helpers: `$F
 | `$B7AC` | inicia o jogo descrito pelo registro em `*$046A` (era o "repetir último jogo") |
 | `$CBC0` | despacha o menu de arquivo pela extensão → `$D556` (.NES/.FDS), `$D782` (.SAV), `$D83F` (.TXT) |
 | `$D556` | menu do jogo (resultado 0 = carregar → `$BF16` + `$B7AC`; 2 = Info da ROM `$CD1F`) |
-| `$BC71` | lê o registro do arquivo pelo índice: `cluster32, …, nome(LFN)` e o **nome 8.3 em buf+`$100`** (11 bytes — buffer precisa de 267 B) |
+| `$BC71` | lê o registro do arquivo pelo índice: `cluster32, …, nome` em +10 (nome longo, ou `"NOME    EXT"` sem LFN); escreve além de 256 B (buffer de 267 B: salve `$0300–$030F` se o buffer for `$0200`). Não há nome 8.3 confiável em buf+`$100` (verificado) |
+| `$C7E2` | (redesenhar8) desenha a lista e a barra de status para `$8276`; o laço do navegador chama com 0 |
 | `$9541` | lê setores de um arquivo a partir do cluster; **destino < `$2000` vai para o PPU** |
 | `$95C4` | continua lendo o arquivo aberto (o emulador não simula a continuação — leia tudo numa chamada) |
 | `$AD3B` | acha subpasta — compara **exatamente 4 caracteres** (por isso `ARTS`, `EDFC`, `SAVE`, `MAPS`) |
@@ -114,6 +115,11 @@ argumento** (exatamente como o OS faz); quem é chamado desempilha. Helpers: `$F
 | `$F66A`, `$F679` | "Sel. e Iniciar", "Apenas Selec." | "Carregar jogo", "Favoritar" |
 | `$CB56`, `$CB5D` | tabela `$03C9`, 5 itens | `MAIN_TABLE` no banco 15 (+ "Favoritos"), 6 itens |
 | `$CBAF` | `LDY #0; LDA (sp),Y; BNE $CB55` | `JSR H_MAIN` (0 → Opções; 5 → tela de favoritos; resto → volta a `$CB55`) |
+| `$C81F`, `$C833` | atributos da barra de status: linha 6 = `$FF` (linhas 24–27) | linha 7 = `$0F` (linhas 28–29, fim da tela, 2 linhas de altura) |
+| `$C8BF`, `$C8C7`, `$C8DF`, `$C941` | nome selecionado nas linhas `$17`/`$18` (tela 25/26) | `$1A`/`$1B` (tela 28/29) |
+| `$8442`, `$8449` (banco 12) | upload parcial ao mover o cursor: PPU `$2320` ← `$6320` | PPU `$2380` ← `$6380` |
+| `$CB34` | `JMP $CA40` (laço do menu sem confirmar/cancelar) | `JMP $D5C5`: no menu do jogo (tabela `$03C1`, único byte baixo `$C1`) ESQ/DIR saem com `$FE`/`$FD` |
+| `$D5C5–$D5DD` | código morto do "Apenas Selec." | `theme_runtime.menu_lr_code` (25 bytes) |
 | `$8103` | (v1.4 tinha hook) | original `LDA $2002 / PLA / RTI` |
 | `$F7B9–$F899` + 14 ponteiros em `$D1C7…$D251` | textos do "Sobre" | crédito do mod e controles atuais (`theme_runtime.ABOUT_LINES`, máx. 225 bytes) |
 | `$63C0`, `$63C7` (sombra) | atributo `$05` | `$0A`: cantos do banner usam a paleta 2 (ícones) |
@@ -129,10 +135,11 @@ mapeia `$0B` e salta para `DISPATCH`), `MAIN_TABLE` (título + 6 itens do Menu P
 | Endereço | Conteúdo |
 | :--- | :--- |
 | `$6000` | ponteiros dos 9 pacotes |
-| `$6012…` | pacotes: nametable 64 B (linhas 0–1) + nº de tiles + (slot, 16 B) por tile |
+| `$6012…` | pacotes: nametable 64 B (linhas 0–1) + nº de tiles + (slot, 16 B) por tile (até `$6E10`) |
+| `$6E10` | textos dos favoritos que não cabem no fim do banco (`art_runtime.DATA2`) |
 | `$6E60` | paletas dos temas (9 × 16 cores, `banner_art.palette16`) |
 | `$6F00` | loader (paleta + tiles; usa `$9A–$9D`), até `$6FBF` |
-| `$6FC0` | variáveis dos favoritos (16 B, `fav_runtime.VARS_SRC`) |
+| `$6FC0` | variáveis dos favoritos (16 B, `fav_runtime.VARS_SRC`; `V_DIR` = ESQ/DIR do menu do jogo) |
 | `$6FD0` | cache de nomes dos favoritos: 32 × 32 B (nome 28 + NUL, byte 31 = slot) |
 | `$73D0` | código longo: `DISPATCH`, `SELT`, `MAIN`, `FAVADD`, tela de favoritos, capas, textos, imagem do trampolim (até ~`$7F49`) |
 | `$7FE0` | rascunho: cópia de `$0300–$030F` durante `$BC71` |
@@ -153,6 +160,10 @@ LBA do setor K: anda `K / spc` clusters com `$C404`, `$969A` e soma `K % spc`. B
 malloc do OS (recusa se `$0450` ≥ `$7C00`), liberado antes de voltar ao OS ou iniciar o jogo.
 - **Favoritar** (menu do jogo): `$BF16` monta o registro, procura duplicado (mesmo cluster) e o primeiro
   slot livre, grava, mostra mensagem em tela cheia e pede redesenho (`$04D4`).
+- **ESQ/DIR no menu do jogo** (`art_runtime` `STEP`): o `$CA0D` devolve `$FE`/`$FD`; o código anda `$8276`
+  (dá a volta em `$04B8`), pula pastas (`*$0464`[índice] bit 7) e nomes que não terminam em `ES`/`DS`, grava o
+  novo índice em `(sp),0` (o `$D556` usa esse valor para carregar/Info/Favoritar), chama `$C7E2(0)`, empilha de
+  novo os argumentos do menu (`$03C1`, 3, 0) e reabre capa + menu.
 - **Favoritos** (Menu Principal): lista em ordem de slot; cima/baixo, confirmar copia o registro para
   `*$046A` e chama `$B7AC`; SELECT zera o cluster do slot; cancelar volta ao menu (`$847C` + `$CB55`).
 

@@ -94,7 +94,7 @@ emu.press_button(BTN_A, hold_frames=1, wait_frames=20)
 # Helper function to step down until status bar matches filename
 def select_file(target_name):
     for _ in range(30):
-        lines = [l for l in emu.dump_screen_text().split("\n") if l.startswith("25:")]
+        lines = [l for l in emu.dump_screen_text().split("\n") if l.startswith("28:")]
         if lines and target_name in lines[0]:
             return True
         emu.press_button(BTN_DOWN, hold_frames=1, wait_frames=15)

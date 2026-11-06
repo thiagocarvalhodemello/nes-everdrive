@@ -29,6 +29,7 @@ As capas são identificadas pelo **conteúdo** da ROM (não pelo nome do arquivo
 | **A / B** (confirmar) | Abre a pasta, ou o **menu do jogo**: capa + `Carregar jogo` + `Info da ROM` + `Favoritar` |
 | **SELECT** | Próximo tema (9 temas, em ciclo); o tema fica salvo e volta no próximo boot |
 | **START** | **Menu Principal**: Opções, Trapaças, Info Sistema, Info Mappers, Sobre, **Favoritos** |
+| **ESQ / DIR** | Página anterior / próxima da lista; **dentro do menu do jogo**, jogo anterior / próximo |
 
 O botão de confirmar segue a opção "inverter A/B" do menu Opções.
 
@@ -41,6 +42,7 @@ Ao confirmar um jogo abre o menu com a capa (64×96 px, 48 sprites 8×16, 12 cor
 ![Menu do jogo](docs/screenshots/art_2_legend_of_zelda_the_usa_rev_1.png)
 
 * **Carregar jogo** inicia o jogo; **Info da ROM** mostra mapper, PRG/CHR, bateria e espelhamento (também com a capa).
+* **ESQ / DIR** troca para o jogo anterior / próximo da pasta sem fechar o menu (pula pastas e arquivos que não são `.nes`/`.fds`, dá a volta no fim da lista); a capa e o nome no rodapé acompanham.
 * **Identificação pelo conteúdo:** o console calcula o CRC-32 dos bytes 512–2559 da ROM e procura `EDFC/ARTS/<CRC>.BIN`. Traduções, revisões e a maioria dos hacks mostram a capa do jogo original.
 * **Seguro:** a leitura usa a API de arquivos do próprio OS no laço principal, direto para a CHR-RAM; nada é gravado no cartão e nenhuma memória do OS é alterada.
 * **Sem capa?** O menu funciona normalmente, só sem a imagem.

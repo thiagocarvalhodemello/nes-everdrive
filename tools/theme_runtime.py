@@ -129,7 +129,8 @@ NT_BYTES = 64                  # banner nametable rows 0-1 (row 2 = black spacer
 BLACK_TILE = 0x1F
 
 # bank $0B layout (shared with test_full_banner_system / art_runtime)
-B11_PAL_TABLE = 0x6E60         # 9 x 16 palette bytes (banner_art.palette16); theme data ends before
+B11_DATA2 = 0x6E10             # some favourites strings (art_runtime.DATA2); theme data must end before
+B11_PAL_TABLE = 0x6E60         # 9 x 16 palette bytes (banner_art.palette16)
 B11_LOADER = 0x6F00            # palette + CHR tile loader (<= 0xC0 bytes)
 B11_VARS = 0x6FC0              # favourites variables (16 bytes)
 B11_CACHE = 0x6FD0             # favourites name cache: 32 x 32 bytes
@@ -160,6 +161,21 @@ SITE_FAVADD = 0xD5BD           # ROM menu result 2 (was the "Apenas Selec." code
 SITE_MAIN_TABLE = 0xCB56       # main menu: operands of LDA #<table / LDX #>table
 SITE_MAIN_COUNT = 0xCB5D       # main menu: 5 items -> 6
 SITE_MAIN_DISP = 0xCBAF        # main menu: LDY #0 / LDA (sp),Y / BNE $CB55 -> JSR H_MAIN
+# browser status bar (selected name): was attribute row 6 = $FF (screen rows 24-27, palette 3) with
+# the name on list rows $17/$18 (screen rows 25/26); now only the top half of attribute row 7
+# (screen rows 28-29, the bottom of the screen) and the name on rows 28/29
+SITE_BAR_ATTR_ROW = 0xC81F     # LDA #$F0 (offset of attribute row 6 in the shadow) -> #$F8 (row 7)
+SITE_BAR_ATTR_VAL = 0xC833     # LDA #$FF (4 quadrants palette 3) -> #$0F (top quadrants only)
+SITE_BAR_ROWS = (0xC8BF, 0xC8C7, 0xC8DF, 0xC941)   # clear row $17, clear $18, print $17, print $18
+SITE_BAR_PPU = 0x8442          # cursor-move partial upload: LDA #$20 (PPU $2320 = row 25) -> #$80 (row 28)
+SITE_BAR_SRC = 0x8449          # ... LDA $6260,Y (Y=$C0: shadow $6320) -> $62C0,Y (shadow $6380)
+# game menu: LEFT/RIGHT = previous/next game. $CA0D's "no confirm/cancel" exit (JMP $CA40 at $CB34)
+# goes to a check in the dead "Apenas Selec." code: only for the game menu table ($03C1, the only
+# table with low byte $C1) it returns $FE (left) / $FD (right); art_runtime.ART_MENU handles them
+SITE_MENU_LR = 0xCB34          # JMP $CA40 -> JMP MENU_LR
+MENU_LR = 0xD5C5               # 28 unreachable bytes after SITE_FAVADD
+GAME_MENU_TABLE = 0x03C1
+BAR_LINE = 0x1A                # list row of the first name line (+2 = screen row 28)
 
 # "Sobre" screen ($D1C4): 14 lines, each "LDA #<str / LDX #>str / JSR pushax / JSR println".
 # The string block $F7B9-$F899 (bank 15) is rewritten and the 14 pointers repointed.
@@ -194,6 +210,8 @@ KEYSTREAM = {
     SITE_LOAD_STR: bytes.fromhex("8bf1897610f9758ee1b2458ea9b0c9"),
     SITE_FAV_STR: bytes.fromhex("63086e1e2864236dfd29730e9995"),
     SITE_ITEMS2: bytes.fromhex("98a3"),
+    SITE_BAR_PPU: bytes([0x64]),
+    SITE_BAR_SRC: bytes.fromhex("b490"),
     ABOUT_BLOCK: bytes.fromhex(
         "87e9d8967a203ee9b50a512a317f9917c6c0c2f96a53b20156a890b257cccbcfec7698595127b256fa14d9a988"
         "7781e08aee59436c3c2a08812ca743ecfa6838a25a032a2cb4e49200da87e290f67958f66838f67858d1f9f578"
@@ -373,9 +391,24 @@ def build_runtime():
     return bytes(payload), labels
 
 
+def menu_lr_code():
+    """LEFT/RIGHT in the game menu -> result $FE/$FD (other menus: unchanged loop)."""
+    code, _ = assemble([
+        (None, "LDY", "imm", 0x08), (None, "LDA", "indy", 0x28),      # item table (low byte) on the C stack
+        (None, "CMP", "imm", GAME_MENU_TABLE & 0xFF), (None, "BNE", "rel", "BACK"),
+        (None, "LDA", "abs", 0x0484), (None, "AND", "imm", 0x03), (None, "BEQ", "rel", "BACK"),
+        (None, "ORA", "imm", 0xFC),                                   # right $01 -> $FD, left $02 -> $FE
+        (None, "JMP", "abs", 0xCB3B),                                 # menu exit with A as the result
+        ("BACK", "JMP", "abs", 0xCA40),
+    ], MENU_LR, {})
+    assert len(code) <= 0xD5E1 - MENU_LR, len(code)
+    return code
+
+
 def os_patches(labels, orig_data):
     """{cpu address: plaintext bytes} for every site changed in the OS."""
     j = lambda op, a: bytes([op, a & 0xFF, a >> 8])
+    assert labels["MAIN_TABLE"] & 0xFF != GAME_MENU_TABLE & 0xFF, "main menu table would get LEFT/RIGHT"
     return {
         HOOK_BOOT: j(0x20, labels["BOOT"]),
         HOOK_BANNER: j(0x4C, labels["BANNER"]) + b"\xEA\xEA",
@@ -396,6 +429,13 @@ def os_patches(labels, orig_data):
         SITE_MAIN_TABLE: bytes([labels["MAIN_TABLE"] & 0xFF, 0xA2, labels["MAIN_TABLE"] >> 8]),
         SITE_MAIN_COUNT: bytes([0x06]),
         SITE_MAIN_DISP: j(0x20, labels["H_MAIN"]) + b"\xEA\xEA\xEA",
+        SITE_MENU_LR: j(0x4C, MENU_LR),
+        MENU_LR: menu_lr_code(),
+        SITE_BAR_ATTR_ROW: bytes([0xF8]),
+        SITE_BAR_ATTR_VAL: bytes([0x0F]),
+        SITE_BAR_PPU: bytes([0x80]),
+        SITE_BAR_SRC: bytes([0xC0, 0x62]),
+        **{a: bytes([BAR_LINE + (i & 1)]) for i, a in enumerate(SITE_BAR_ROWS)},
         **about_patches(),
     }
 

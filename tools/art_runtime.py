@@ -21,7 +21,8 @@ tables and directory variables): that corrupted the file list until reboot.
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from theme_runtime import (assemble, build_runtime, B11_DISPATCH, B11_VARS, B11_CACHE,
+from theme_runtime import (assemble, build_runtime, B11_DISPATCH, B11_VARS, B11_CACHE, B11_DATA2, B11_PAL_TABLE,
+                           GAME_MENU_TABLE,
                            FAR_ID, THEME_ID, NUM_THEMES, OS_REDRAW,
                            FAR_INFO, FAR_MENU, FAR_MAIN, FAR_SEL, FAR_FAVADD)
 from fav_runtime import fav_listing, fav_symbols, DATA
@@ -35,6 +36,9 @@ OS_WAIT_BTN = 0x9F6C
 OS_MENU = 0xCA0D            # generic cursor menu (args already on the C stack)
 OS_GET_ENTRY = 0xBC71       # (index8, buf16) -> file record: cluster32, ..., name
 LIST_BASE, LIST_SEL = 0x0466, 0x8276   # *(u8*)(*LIST_BASE + *LIST_SEL) = file index
+LIST_FLAGS = 0x0464         # *(u8*)(*LIST_FLAGS + file index): bit 7 = folder
+LIST_COUNT = 0x04B8         # u16: entries in the browser list
+OS_BROWSER_DRAW = 0xC7E2    # (redraw8): browser list + status bar for LIST_SEL (its loop calls it with 0)
 OS_READ_FILE = 0x9541       # (cluster32, dst16, nsect8); dst < $2000 => PPU
 OS_FIND_DIR = 0xAD3B        # (parent32, name*, out32*)
 OS_FIND_FILE = 0x9DC7       # (dir32, name11*, 0, out32*)
@@ -140,6 +144,10 @@ def _ppu_addr(hi, lo):
             (None, "LDA", "imm", lo), (None, "STA", "abs", 0x2006)]
 
 
+DATA2 = ("D_DUP", "D_FULL", "D_NOFILE", "D_MAGIC")   # strings kept in the gap before the palettes
+lab_data2 = []
+
+
 def build_main(tramp_len, sym):
     L = [
         # ---- ART_INFO: record = ROM info function's buffer (word at C sp+1)
@@ -152,12 +160,64 @@ def build_main(tramp_len, sym):
         *_call(OS_WAIT_BTN, 0),
         (None, "JSR", "abs", "HIDE"),
         (None, "JMP", "abs", "T_EXIT"),
-        # ---- ART_MENU: index -> record via the OS, then the OS menu itself
+        # ---- ART_MENU: index -> record via the OS, then the OS menu itself.
+        # LEFT/RIGHT (menu result $FE/$FD, theme_runtime.menu_lr_code) move the browser
+        # selection to the previous/next .NES/.FDS file and reopen the menu for it.
         ("ART_MENU", "JSR", "abs", "SETUP"),
-        (None, "LDA", "abs", LIST_BASE), (None, "CLC", "imp", None), (None, "ADC", "abs", LIST_SEL),
+        (None, "LDA", "imm", 0), (None, "STA", "abs", "V_DIR"),
+        (None, "JSR", "abs", "GETREC"),
+        ("AM_SHOW", "BEQ", "rel", "GOTREC"),
+        (None, "CMP", "imm", 0xA0), (None, "BNE", "rel", "NOREC"),
+        ("GOTREC", "LDX", "imm", 3),
+        ("CR", "LDA", "abx", REC), (None, "STA", "abx", "CLUS"), (None, "DEX", "imp", None), (None, "BPL", "rel", "CR"),
+        (None, "JSR", "abs", "LOAD"),
+        ("NOREC", "JSR", "abs", "ZPOUT"),         # the OS menu runs with its own zero page
+        *_call(OS_MENU, 0, 3),
+        (None, "CMP", "imm", 0xFD), (None, "BCC", "rel", "MDONE"),
+        (None, "CMP", "imm", 0xFF), (None, "BNE", "rel", "STEP"),
+        ("MDONE", "STA", "abs", "RES"),
+        (None, "JSR", "abs", "HIDE"),
+        (None, "LDA", "abs", "RES"),
+        (None, "JMP", "abs", "T_EXIT"),
+        # ---- STEP: $FE = previous, $FD = next (the menu already popped its args: C sp -> file index)
+        ("STEP", "STA", "abs", "V_DIR"),
+        (None, "JSR", "abs", "HIDE"),
+        (None, "JSR", "abs", "SETUP"),
+        ("NXT", "LDA", "abs", "V_DIR"), (None, "LSR", "imp", None), (None, "BCS", "rel", "FWD"),
+        (None, "LDA", "abs", LIST_SEL), (None, "ORA", "abs", LIST_SEL + 1), (None, "BNE", "rel", "BK1"),
+        (None, "LDA", "abs", LIST_COUNT), (None, "STA", "abs", LIST_SEL),
+        (None, "LDA", "abs", LIST_COUNT + 1), (None, "STA", "abs", LIST_SEL + 1),
+        ("BK1", "LDA", "abs", LIST_SEL), (None, "BNE", "rel", "BK2"), (None, "DEC", "abs", LIST_SEL + 1),
+        ("BK2", "DEC", "abs", LIST_SEL), (None, "JMP", "abs", "ISDIR"),
+        ("FWD", "INC", "abs", LIST_SEL), (None, "BNE", "rel", "FW1"), (None, "INC", "abs", LIST_SEL + 1),
+        ("FW1", "LDA", "abs", LIST_SEL), (None, "CMP", "abs", LIST_COUNT), (None, "BNE", "rel", "ISDIR"),
+        (None, "LDA", "abs", LIST_SEL + 1), (None, "CMP", "abs", LIST_COUNT + 1), (None, "BNE", "rel", "ISDIR"),
+        (None, "LDA", "imm", 0), (None, "STA", "abs", LIST_SEL), (None, "STA", "abs", LIST_SEL + 1),
+        # folders: flag table *LIST_FLAGS indexed by file index, bit 7
+        ("ISDIR", "JSR", "abs", "SELIDX"),
+        (None, "LDA", "abs", "CLUS"), (None, "CLC", "imp", None), (None, "ADC", "abs", LIST_FLAGS),
+        (None, "STA", "zp", 0x30), (None, "LDA", "abs", LIST_FLAGS + 1), (None, "ADC", "imm", 0),
+        (None, "STA", "zp", 0x31), (None, "JSR", "abs", "T_PEEK"),
+        (None, "LDA", "abs", "CLUS"), (None, "BMI", "rel", "NXT"),
+        (None, "JSR", "abs", "GETREC"),
+        (None, "CPY", "imm", 0), (None, "BNE", "rel", "NXT"),   # not .NES/.FDS
+        (None, "PHA", "imp", None),
+        (None, "LDA", "abs", "CLUS"), (None, "LDY", "imm", 0), (None, "STA", "indy", 0x28),  # $D556 uses it next
+        (None, "TYA", "imp", None), (None, "JSR", "abs", PUSHA),  # browser redraw, as its loop does
+        *_call(OS_BROWSER_DRAW, 0),
+        (None, "LDA", "imm", GAME_MENU_TABLE & 0xFF), (None, "LDX", "imm", GAME_MENU_TABLE >> 8),
+        (None, "JSR", "abs", PUSHAX),
+        (None, "LDA", "imm", 3), (None, "JSR", "abs", PUSHA),
+        (None, "LDA", "imm", 0), (None, "JSR", "abs", PUSHA),
+        (None, "PLA", "imp", None), (None, "JMP", "abs", "AM_SHOW"),
+        # ---- SELIDX: CLUS[0] = file index of the browser selection
+        ("SELIDX", "LDA", "abs", LIST_BASE), (None, "CLC", "imp", None), (None, "ADC", "abs", LIST_SEL),
         (None, "STA", "zp", 0x30),
         (None, "LDA", "abs", LIST_BASE + 1), (None, "ADC", "abs", LIST_SEL + 1), (None, "STA", "zp", 0x31),
-        (None, "JSR", "abs", "T_PEEK"),            # CLUS[0] = file index
+        (None, "JMP", "abs", "T_PEEK"),
+        # ---- GETREC: record of the selection into REC; A = $BC71 status,
+        # Y != 0 when stepping (V_DIR) and the name does not end in ES / DS (.nes, .fds)
+        ("GETREC", "JSR", "abs", "SELIDX"),       # CLUS[0] = file index
         (None, "LDX", "imm", 15),                  # $BC71 overruns REC by 11 bytes into $0300:
         ("S3", "LDA", "abx", 0x0300), (None, "STA", "abx", SAVE3),   # keep the OS DATA there
         (None, "DEX", "imp", None), (None, "BPL", "rel", "S3"),
@@ -165,21 +225,21 @@ def build_main(tramp_len, sym):
         (None, "LDA", "imm", REC & 0xFF), (None, "LDX", "imm", REC >> 8), (None, "JSR", "abs", PUSHAX),
         *_call(OS_GET_ENTRY, REC & 0xFF, REC >> 8),
         (None, "PHA", "imp", None),
-        (None, "LDX", "imm", 15),
+        (None, "LDY", "imm", 0),
+        (None, "LDA", "abs", "V_DIR"), (None, "BEQ", "rel", "EXTOK"),
+        (None, "LDX", "imm", 10),                  # display name (long, or "NAME    EXT"): its last 2 chars
+        ("EL", "LDA", "abx", REC), (None, "BEQ", "rel", "EEND"), (None, "INX", "imp", None), (None, "BNE", "rel", "EL"),
+        ("EEND", "LDA", "abx", REC - 1), (None, "AND", "imm", 0xDF), (None, "CMP", "imm", ord("S")),
+        (None, "BNE", "rel", "EXTNO"),
+        (None, "LDA", "abx", REC - 2), (None, "AND", "imm", 0xDF),
+        (None, "CMP", "imm", ord("E")), (None, "BEQ", "rel", "EXTOK"),
+        (None, "CMP", "imm", ord("D")), (None, "BEQ", "rel", "EXTOK"),
+        ("EXTNO", "INY", "imp", None),
+        ("EXTOK", "LDX", "imm", 15),
         ("R3", "LDA", "abx", SAVE3), (None, "STA", "abx", 0x0300),
         (None, "DEX", "imp", None), (None, "BPL", "rel", "R3"),
         (None, "PLA", "imp", None),
-        (None, "BEQ", "rel", "GOTREC"),
-        (None, "CMP", "imm", 0xA0), (None, "BNE", "rel", "NOREC"),
-        ("GOTREC", "LDX", "imm", 3),
-        ("CR", "LDA", "abx", REC), (None, "STA", "abx", "CLUS"), (None, "DEX", "imp", None), (None, "BPL", "rel", "CR"),
-        (None, "JSR", "abs", "LOAD"),
-        ("NOREC", "JSR", "abs", "ZPOUT"),         # the OS menu runs with its own zero page
-        *_call(OS_MENU, 0, 3),
-        (None, "STA", "abs", "RES"),
-        (None, "JSR", "abs", "HIDE"),
-        (None, "LDA", "abs", "RES"),
-        (None, "JMP", "abs", "T_EXIT"),
+        (None, "RTS", "imp", None),
         # ---- SETUP: trampoline -> $0100, save zero page scratch
         ("SETUP", "LDX", "imm", tramp_len - 1),
         ("CP", "LDA", "abx", "TSRC"), (None, "STA", "abx", T),
@@ -314,10 +374,16 @@ def build_main(tramp_len, sym):
     # layout: code | strings (DATA) | trampoline image (TSRC)
     dummy = {n: 0 for n, _ in DATA}
     code, _ = assemble(L, ART_MAIN, dict(sym, TSRC=0, **dummy))
-    dsym, a, data = {}, ART_MAIN + len(code), bytearray()
+    dsym, a, data, data2 = {}, ART_MAIN + len(code), bytearray(), bytearray()
     for n, b in DATA:
-        dsym[n] = a + len(data)
-        data += b
+        if n in DATA2:
+            dsym[n] = B11_DATA2 + len(data2)
+            data2 += b
+        else:
+            dsym[n] = a + len(data)
+            data += b
+    assert B11_DATA2 + len(data2) <= B11_PAL_TABLE, "DATA2 strings overlap the palettes"
+    lab_data2[:] = [bytes(data2)]
     tsrc = ART_MAIN + len(code) + len(data)
     code, lab = assemble(L, ART_MAIN, dict(sym, TSRC=tsrc, **dsym))
     assert lab["DISPATCH"] == B11_DISPATCH
@@ -341,6 +407,9 @@ def install_into_bank11(b11):
     off = ART_MAIN - 0x6000
     assert not any(b11[off:off + len(blob)]), "bank $0B area for art runtime is not free"
     b11[off:off + len(blob)] = blob
+    d2, off2 = lab_data2[0], B11_DATA2 - 0x6000
+    assert not any(b11[off2:off2 + len(d2)]), "bank $0B DATA2 area is not free (theme data too big?)"
+    b11[off2:off2 + len(d2)] = d2
     return lab
 
 

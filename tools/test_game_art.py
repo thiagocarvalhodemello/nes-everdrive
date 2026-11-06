@@ -78,7 +78,7 @@ class Watch:
 
 def select_file(emu, name_prefix):
     for _ in range(30):
-        line = [l for l in emu.dump_screen_text().split("\n") if l.startswith("25:")]
+        line = [l for l in emu.dump_screen_text().split("\n") if l.startswith("28:")]
         if line and name_prefix in line[0]:
             return
         emu.press_button(0x04, wait_frames=15)
@@ -176,6 +176,56 @@ def main(shot=None):
         emu.press_button(0x20, hold_frames=3, wait_frames=40)
         expect(emu.prg_ram[15][0xFAE5 - 0xE000] == (before + 1) % 9, "SELECT theme switch still works")
         expect(not watch.bad_writes, f"art code wrote no OS work RAM ({watch.bad_writes[:3]})")
+
+        # --- LEFT/RIGHT in the game menu: previous/next .nes/.fds (folders, .TXT, .SAV skipped, wraps)
+        # card (sorted): EDFC/ CHEATS.TXT MARIO.NES MARIO.SAV Test Game ZELDA.FDS ZZ No Art
+        status = lambda: str([l for l in emu.dump_screen_text().splitlines() if l.startswith("28:")])
+        loop_sp, step0 = [], emu.step
+
+        def at_loop():                                           # C sp at the top of the browser loop
+            if emu.PC == 0xD89E:
+                loop_sp.append(emu.ram[0x28] | emu.ram[0x29] << 8)
+            step0()
+        emu.step = at_loop
+        select_file(emu, "Test Game")
+        emu.press_button(0x40, wait_frames=60)
+        seen = []
+        for btn in (0x01, 0x01, 0x01, 0x02, 0x02, 0x02):
+            emu.press_button(btn, wait_frames=90)
+            seen.append((status()[7:17], "Carregar jogo" in emu.dump_screen_text(), bool(emu.ppu_mask & 0x10)))
+        want = [("ZELDA   FD", True, False), ("ZZ No Art ", True, False), ("MARIO   NE", True, False),
+                ("ZZ No Art ", True, False), ("ZELDA   FD", True, False), ("Test Game ", True, True)]
+        expect(seen == want, f"RIGHT/LEFT switch games, skip non-games, wrap, cover follows ({seen})")
+        close_popup(emu)
+        emu.press_button(0x04, wait_frames=15)
+        emu.step = step0
+        expect(len(set(loop_sp)) == 1, f"C stack balanced after switching games ({sorted(set(map(hex, loop_sp)))})")
+        expect(page3(emu) == p3, "OS DATA segment unchanged after switching games")
+        open_game_menu(emu, "Test Game")
+        emu.press_button(0x01, wait_frames=90)                   # -> ZELDA, then "Carregar jogo"
+        reached = []
+        step = emu.step
+
+        def stop_at_launch():
+            if emu.PC == 0xB7AC:
+                rec = emu.ram[0x46A] | emu.ram[0x46B] << 8
+                reached.append(bytes(emu.read(rec + 10 + i) for i in range(9)))
+                raise StopIteration
+            step()
+        emu.step = stop_at_launch
+        try:
+            emu.press_button(0x40, wait_frames=60)               # Carregar jogo
+        except StopIteration:
+            pass
+        emu.step = step
+        expect(reached == [b"ZELDA   F"], f"Carregar jogo after switching starts the switched game ({reached})")
+
+    with tempfile.TemporaryDirectory() as root:
+        build_sd(root, art_rom, plain_rom, art)
+        emu = EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root)
+        emu.run_frames(40)
+        emu.press_button(0x80, wait_frames=40)
+        emu.run_frames(20)
 
         # --- "Carregar jogo" starts the game through the OS ($BF16 select, $B7AC start)
         open_game_menu(emu, "Test Game")
