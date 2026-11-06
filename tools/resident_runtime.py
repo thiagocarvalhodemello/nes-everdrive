@@ -33,7 +33,8 @@ from art_runtime import (build_tramp, art_module_listing, SAVE3, EDFC_CLUSTER, B
                          OS_WAIT_VBL, OS_WAIT_BTN, OS_MENU, OS_READ_FILE, OS_FIND_FILE,
                          PUSHA, PUSH0, PUSHAX, PUSHEAX)
 
-VARS2 = {"OVL_CUR": 0, "V_MSEL": 1, "OVL_WANT": 2, "V_BOOT": 3}   # at B11_VARS2 (8 bytes; 0 at power-on)
+VARS2 = {"OVL_CUR": 0, "V_MSEL": 1, "OVL_WANT": 2}   # at B11_VARS2 (8 bytes)
+BOOT_MARK = 0x01AF          # right after the trampoline: $A5 once the boot menu was opened
 OVL_ART, OVL_FAV, OVL_REC, OVL_FIND, OVL_SCAN = 1, 2, 3, 4, 5
 OVL_FILES = {OVL_ART: "OVLART  BIN", OVL_FAV: "OVLFAV  BIN", OVL_REC: "OVLREC  BIN", OVL_FIND: "OVLFIND BIN",
              OVL_SCAN: "OVLSCAN BIN"}
@@ -150,11 +151,21 @@ LA1:    JSR ZPOUT
 
 ; ---- START in the browser (and once after boot): menu table -> page 2, OS main menu
 ; ---- browser idle loop ($D91E, was LDA $0484): A = joypad byte. The first call after power-on
-;      "presses START" (main menu) and keeps it: $A2 = 1 stops the NMI joypad read until START runs
-BJOY:   LDA V_BOOT
-        BNE BJ1
-        INC V_BOOT
-        JSR SETUP               ; the trampoline (T_EXIT) is not there yet after power-on
+;      or reset "presses START" (main menu) and keeps it: $A2 = 1 stops the NMI joypad read until
+;      START runs. The state lives in internal RAM (the trampoline + BOOT_MARK): bank $0B survives
+;      a reset but page 1 does not (a game used it as its stack) - T_EXIT must be checked first.
+BJOY:   LDX #7
+BJ0:    LDA TSRC,X
+        CMP $0100,X
+        BNE BJN
+        DEX
+        BPL BJ0
+        LDA {BOOT_MARK}
+        CMP #$A5
+        BEQ BJ1
+BJN:    JSR SETUP
+        LDA #$A5
+        STA {BOOT_MARK}
         LDA #1
         STA z:$A2
         LDA #$10
@@ -502,6 +513,7 @@ def build_resident(ovl_base=None, build=0):
         if ovl_base is None:
             base = end           # the loader copies byte-exact: no page alignment needed
     assert lab["DISPATCH"] == B11_DISPATCH
+    assert 0x0100 + len(tramp) <= BOOT_MARK, "trampoline overlaps BOOT_MARK"
     lab.update(sym)
     lab.update({"TSRC": tsrc, "_RES_END": end, "OVL_BASE": base})
     return code + tramp, lab, d2

@@ -173,7 +173,7 @@ as listas/busca mostram "Falta EDFC/OVL*.BIN". Os módulos não chamam `SETUP` (
 
 ### Menu Principal, Recentes e Busca
 - **Boot**: `BOOT` sempre pede um tema e o primeiro `IDLE` o aplica. A primeira passada do laço ocioso do
-  navegador (`$D91E` → `BJOY`, `V_BOOT` = 0 após ligar) grava START em `$0484` e trava a leitura da NMI
+  navegador após ligar ou reset (`$D91E` → `BJOY`: trampolim ausente em `$0100` ou marcador `$01AF` ≠ `$A5`) grava START em `$0484` e trava a leitura da NMI
   (`$A2 = 1`); o laço trata como START → `START` (libera `$A2`) copia a tabela para `$0280` e chama `$CB50`.
   (Antes o `IDLE` gravava o START: ele roda primeiro numa espera de botão do boot (`$9F82`), então o START
   fechava o aviso A7 "configurações recriadas" ou era sobrescrito pela NMI/OS.)

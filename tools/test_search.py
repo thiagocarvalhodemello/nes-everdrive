@@ -16,6 +16,7 @@ Checks:
     a subfolder two levels down; cancel then walks back up to Hacks and the root
   * "ZZQ" -> "Nada encontrado."
   * nothing written to the card, OS DATA page $0300 unchanged, heap pointer restored
+  * page 1 wiped while in the browser (a reset after a game): the main menu opens again, no crash
   * missing OVLFIND.BIN -> message, menu still works
 
 Usage: python tools/test_search.py
@@ -190,6 +191,24 @@ def main():
         expect(bytes(emu.sd_img) == img0, "search wrote nothing to the card")
         expect(bytes(emu.ram[0x300:0x360]) + bytes(emu.ram[0x380:0x400]) == p3, "OS DATA page $0300 unchanged")
         expect(emu.ram[0x450] | emu.ram[0x451] << 8 == heap, "heap pointer restored")
+
+    with tempfile.TemporaryDirectory() as root:              # reset after a game
+        build_sd(root)
+        emu = EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root)
+        emu.boot_to_browser()
+        import random
+        rnd = random.Random(7)                                 # the game used page 1 as its stack;
+        for a in range(0x100, 0x1B0):                          # bank $0B (our state) survives the reset
+            emu.ram[a] = rnd.randrange(256)
+        ok = False
+        for _ in range(60):
+            emu.run_frames(5)
+            if "Menu Principal" in screen(emu):
+                ok = True
+                break
+        expect(ok, "page 1 wiped (reset after a game): no crash, the main menu opens again")
+        emu.press_button(A, wait_frames=60)
+        expect("Menu Principal" not in screen(emu) and "Alpha" in screen(emu), "... and closes back to the browser")
 
     with tempfile.TemporaryDirectory() as root:
         build_sd(root, find=False)
