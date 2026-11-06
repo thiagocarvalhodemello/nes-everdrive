@@ -3,7 +3,9 @@ Timing-aware emulator mode: finds PPU writes that land outside vblank while
 rendering is on (they corrupt VRAM on a real NES; the normal emulator, which
 fast-forwards vblank waits, cannot see them).
 
-Model (NTSC): 29780 CPU cycles per frame; vblank flag set and NMI fired at the
+Model (NTSC): 29780.5 CPU cycles per frame (29780 and 29781 alternate, as the odd-frame
+skipped dot does on hardware; a fixed length phase-locks the OS's BIT $2002 wait against the
+NMI's own $2002 read so that it never sees the flag); vblank flag set and NMI fired at the
 start of the frame, flag cleared after VBLANK_CYCLES or by a $2002 read.
 Instruction cycles from py65's table (no page-cross penalty); SD sector
 transfers cost SD_SECTOR_CYCLES each (the BIOS is stubbed).
@@ -61,10 +63,13 @@ class TimedEmu(EverDriveN8Emu):
             self._advance(SD_SECTOR_CYCLES * max(1, self.ram[0x04E6]))
         super().handle_bios_trap(pc)
 
+    def _frame_len(self):
+        return FRAME_CYCLES + (self.frames & 1)
+
     def _advance(self, n, early_read=False):
         self.cyc += n
-        while self.cyc >= FRAME_CYCLES:
-            self.cyc -= FRAME_CYCLES
+        while self.cyc >= self._frame_len():
+            self.cyc -= self._frame_len()
             self.frames += 1
             if not early_read:                     # flag already seen (and cleared) by the read
                 self.ppu_status |= 0x80
@@ -81,7 +86,7 @@ class TimedEmu(EverDriveN8Emu):
         # (BIT/LDA $2002): the read sees the flag, as on hardware.
         early = False
         if op in (0x2C, 0xAD) and self.read(pc + 1) == 0x02 and self.read(pc + 2) == 0x20 \
-                and self.cyc + n - 1 >= FRAME_CYCLES:
+                and self.cyc + n - 1 >= self._frame_len():
             self.ppu_status |= 0x80
             early = True
         super().step()

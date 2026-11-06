@@ -128,11 +128,13 @@ REGION_START = 0xFAE4          # bank 15 RAM, all-zero plaintext in the original
 REGION_LEN = 282               # $FAE4..$FBFD (same window the previous build used)
 FILE_REGION = 0xDAE4           # file offset of REGION_START in OS.BIN
 
-FAR_ID = 0xFAE4                # entry number for the bank $0B dispatcher (see FAR)
+# $FAE4 stays 0: the OS error screen ($ECB2) prints the string at $FAE4 (empty in the
+# original) above the error code; a variable there showed up as a line of garbage
 THEME_ID = 0xFAE5              # theme currently on screen
 WANT_ID = 0xFAE6               # theme requested by BOOT; applied from the idle loop
 FORCE = 0x80                   # WANT_ID bit 7: apply even if equal (boot palette/CHR)
-CODE_START = 0xFAE7
+FAR_ID = 0xFAE7                # entry number for the bank $0B dispatcher (see FAR)
+CODE_START = 0xFAE8
 
 SIG = 0x7FF8                   # bank 8: $ED $FC id ~id (above OS heap ceiling $7F81)
 
@@ -155,7 +157,7 @@ B11_VARS2 = 0x6FB8             # 8 more variables (art_runtime.VARS2: overlay id
 B11_VARS = 0x6FC0              # favourites variables (16 bytes)
 B11_CACHE = 0x6FD0             # favourites name cache: 32 x 32 bytes
 B11_DISPATCH = 0x73D0          # far code: dispatcher, covers, theme key, favourites (art_runtime)
-FAR_INFO, FAR_MENU, FAR_MMENU, FAR_SEL, FAR_FAVADD, FAR_START, FAR_LAUNCH = range(7)
+FAR_INFO, FAR_MENU, FAR_MMENU, FAR_SEL, FAR_FAVADD, FAR_START, FAR_LAUNCH, FAR_JOY = range(8)
 
 # Main menu: the OS table at $03C9 (title + 5 items) is full. START (art_runtime) copies a
 # table with 9 items to page 2 ($0280) and the menu points there; $CB68 (its $CA0D call)
@@ -187,6 +189,15 @@ SITE_MAIN_DISP = 0xCBAF        # main menu: v1.6 had JSR H_MAIN here; back to th
 SITE_MAIN_CALL = 0xCB68        # main menu: JSR $CA0D -> JSR H_MMENU
 SITE_LAUNCH = 0xD5B1           # game menu "Carregar jogo": JSR $B7AC -> JSR H_LAUNCH (recentes)
 SITE_START_STUB = 0xDBED       # dead bytes of the old START code: H_START stub (5 bytes)
+# main menu once after power-on: the browser's idle loop reads the joypad byte at $D91E
+# (LDA $0484) -> JSR H_JOY; the first call (bank $0B variable still 0) "presses START" there.
+# (Injecting it from IDLE was a race: IDLE first runs in a boot-time button wait ($9F82),
+# and the OS/NMI overwrite $0484 before the browser looks at it.)
+SITE_JOY = 0xD91E
+# OS error screen ($ECB2): LDA #lo / LDX #hi of the message for each code. translate_os_ptbr put
+# the messages in $FAEB..$FB5x, which is our code now: they printed as garbage. -> "" ($FAE4)
+SITE_ERRMSG = {0xECF1: "3758", 0xECF8: "b918", 0xECFF: "87cf", 0xED06: "6ce3", 0xED23: "edcf"}
+EMPTY_STR = 0xFAE4
 # browser status bar (selected name): was attribute row 6 = $FF (screen rows 24-27, palette 3) with
 # the name on list rows $17/$18 (screen rows 25/26); now only the top half of attribute row 7
 # (screen rows 28-29, the bottom of the screen) and the name on rows 28/29
@@ -201,7 +212,15 @@ SITE_BAR_SRC = 0x8449          # ... LDA $6260,Y (Y=$C0: shadow $6320) -> $62C0,
 SITE_MENU_LR = 0xCB34          # JMP $CA40 -> JMP MENU_LR
 MENU_LR = 0xD5C5               # 28 unreachable bytes after SITE_FAVADD
 GAME_MENU_TABLE = 0x03C1
-BAR_LINE = 0x1A                # list row of the first name line (+2 = screen row 28)
+BAR_LINE = 0x19                # list row of the first name line (+3 = screen row 28)
+# Everything the OS prints is one row lower (row 0 is under the TV overscan): its two "text
+# position -> shadow address" routines use base $6040 (row 2) -> $6060 (row 3). Banner on rows
+# 1-2, black rows 0 and 3; list rows 4-24; text screens rows 4-27.
+SITE_TXT_BASE = (0xA56B, 0xA5A9)   # LDA #$40 (low byte of $6040) in $A565 and $A595 -> #$60
+SITE_TXT_PTR0 = 0x83F6         # clear screen: LDA #$40 / STA $92 (print pointer row 2) -> #$60
+# cursor-column partial upload ($8403): column 1 of rows 0-23 -> rows 1-24 (PPU $2021 / shadow $6021)
+SITE_CUR_SRC = 0x840C          # LDA #$01 / STA $9A -> #$21
+SITE_CUR_PPU = 0x8418          # LDA #$01 / STA $2006 -> #$21
 
 # "Sobre" screen ($D1C4): 14 lines, each "LDA #<str / LDX #>str / JSR pushax / JSR println".
 # The string block $F7B9-$F899 (bank 15) is rewritten and the 14 pointers repointed.
@@ -238,6 +257,11 @@ KEYSTREAM = {
     SITE_ITEMS2: bytes.fromhex("98a3"),
     SITE_BAR_PPU: bytes([0x64]),
     SITE_BAR_SRC: bytes.fromhex("b490"),
+    SITE_TXT_PTR0: bytes([0xEE]),
+    **{a + 1: bytes([int(k[:2], 16)]) for a, k in SITE_ERRMSG.items()},
+    **{a + 3: bytes([int(k[2:], 16)]) for a, k in SITE_ERRMSG.items()},
+    SITE_CUR_SRC: bytes([0xEA]),
+    SITE_CUR_PPU: bytes([0x2C]),
     ABOUT_BLOCK: bytes.fromhex(
         "87e9d8967a203ee9b50a512a317f9917c6c0c2f96a53b20156a890b257cccbcfec7698595127b256fa14d9a988"
         "7781e08aee59436c3c2a08812ca743ecfa6838a25a032a2cb4e49200da87e290f67958f66838f67858d1f9f578"
@@ -279,7 +303,7 @@ def build_runtime():
     L += [
         ("BANNER", "LDA", "imm", 0x60),
         (None, "STA", "zp", 0x93),                 # instruction replaced by the hook
-        # BANNER_BODY: banner rows 0-1 of THEME_ID from bank $0B + black row 2,
+        # BANNER_BODY: banner rows 1-2 of THEME_ID from bank $0B + black rows 0 and 3,
         # into the OS nametable shadow ($6000) and its popup backup ($6400).
         ("BANNER_BODY", "LDA", "imm", 0x81),
         (None, "STA", "abs", 0x4400),
@@ -300,22 +324,24 @@ def build_runtime():
         (None, "LDA", "imm", 0x08),
         (None, "STA", "abs", 0x4401),
         (None, "TXA", "imp", None),
-        (None, "STA", "aby", 0x6000),
-        (None, "STA", "aby", 0x6400),
+        (None, "STA", "aby", 0x6020),
+        (None, "STA", "aby", 0x6420),
         (None, "DEY", "imp", None),
         (None, "BPL", "rel", "BLP"),
-        (None, "LDA", "imm", BLACK_TILE),          # row 2: spacer between banner and list
+        (None, "LDA", "imm", BLACK_TILE),          # row 0 (overscan) and row 3 (spacer before the list)
         (None, "LDY", "imm", 31),
-        ("RLP", "STA", "aby", 0x6000 + NT_BYTES),
-        (None, "STA", "aby", 0x6400 + NT_BYTES),
+        ("RLP", "STA", "aby", 0x6000),
+        (None, "STA", "aby", 0x6400),
+        (None, "STA", "aby", 0x6020 + NT_BYTES),
+        (None, "STA", "aby", 0x6420 + NT_BYTES),
         (None, "DEY", "imp", None),
         (None, "BPL", "rel", "RLP"),
-        (None, "LDA", "imm", 0x05),                # attribute row 0: palette 1 for banner
+        (None, "LDA", "imm", 0x55),                # attribute row 0 (rows 0-3): palette 1 for the banner
         (None, "LDX", "imm", 0x07),
         ("ALP", "STA", "abx", 0x63C0),
         (None, "DEX", "imp", None),
         (None, "BPL", "rel", "ALP"),
-        (None, "LDA", "imm", 0x0A),                # banner corners (x<32, x>=224): palette 2 (icons)
+        (None, "LDA", "imm", 0xAA),                # banner corners (x<32, x>=224): palette 2 (icons)
         (None, "STA", "abs", 0x63C0),
         (None, "STA", "abs", 0x63C7),
         (None, "RTS", "imp", None),
@@ -380,8 +406,6 @@ def build_runtime():
         (None, "TXA", "imp", None),
         (None, "JSR", "abs", "APPLY"),
         (None, "JSR", "abs", OS_REFRESH_NT),       # push updated shadow to the PPU
-        (None, "LDA", "imm", 0x10),                # once per boot: "press START" -> main menu
-        (None, "STA", "abs", 0x0484),
         (None, "PLA", "imp", None),
         (None, "TAY", "imp", None),
         (None, "JMP", "abs", OS_DECSP2),
@@ -396,6 +420,7 @@ def build_runtime():
         ("H_MMENU", "LDA", "imm", FAR_MMENU), (None, "JMP", "abs", "FAR"),
         ("H_LAUNCH", "LDA", "imm", FAR_LAUNCH), (None, "JMP", "abs", "FAR"),
         ("H_SEL", "LDA", "imm", FAR_SEL), (None, "JMP", "abs", "FAR"),
+        ("H_JOY", "LDA", "imm", FAR_JOY), (None, "JMP", "abs", "FAR"),
         ("H_FAVADD", "LDA", "imm", FAR_FAVADD),        # falls into FAR
         ("FAR", "STA", "abs", FAR_ID),
     ]
@@ -457,6 +482,9 @@ def os_patches(labels, orig_data):
         SITE_MAIN_DISP: bytes.fromhex("a000b128d0a0"),               # original: LDY #0 / LDA (sp),Y / BNE $CB55
         SITE_MAIN_CALL: j(0x20, labels["H_MMENU"]),
         SITE_LAUNCH: j(0x20, labels["H_LAUNCH"]),
+        SITE_JOY: j(0x20, labels["H_JOY"]),                          # was LDA $0484
+        **{a + 1: bytes([EMPTY_STR & 0xFF]) for a in SITE_ERRMSG},    # error messages -> ""
+        **{a + 3: bytes([EMPTY_STR >> 8]) for a in SITE_ERRMSG},
         SITE_MENU_LR: j(0x4C, MENU_LR),
         MENU_LR: menu_lr_code(),
         SITE_BAR_ATTR_ROW: bytes([0xF8]),
@@ -464,6 +492,10 @@ def os_patches(labels, orig_data):
         SITE_BAR_PPU: bytes([0x80]),
         SITE_BAR_SRC: bytes([0xC0, 0x62]),
         **{a: bytes([BAR_LINE + (i & 1)]) for i, a in enumerate(SITE_BAR_ROWS)},
+        **{a: bytes([0x60]) for a in SITE_TXT_BASE},
+        SITE_TXT_PTR0: bytes([0x60]),
+        SITE_CUR_SRC: bytes([0x21]),
+        SITE_CUR_PPU: bytes([0x21]),
         **about_patches(),
     }
 

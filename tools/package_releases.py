@@ -17,7 +17,8 @@ OUT = os.path.join(REPO, "releases")
 # what goes on the card besides EDFC/MAPS: the OS, the mapper routing table, the mapper chart
 # EDFC/OVL*.BIN: code modules loaded by the OS (must come from the same build as OS.BIN)
 SD_FILES = ["EDFC/OS.BIN", "EDFC/MAPROUT.BIN", "EDFC/mappers.png", "EDFC/FAVS.DAT", "EDFC/RECENTS.DAT",
-            "EDFC/OVLART.BIN", "EDFC/OVLFAV.BIN", "EDFC/OVLREC.BIN", "EDFC/OVLFIND.BIN"]
+            "EDFC/OVLART.BIN", "EDFC/OVLFAV.BIN", "EDFC/OVLREC.BIN", "EDFC/OVLFIND.BIN",
+            "EDFC/OVLSCAN.BIN"]
 
 README_SD = """EverDrive N8 - OS PT-BR v{ver} (placas clone V3.1 / Cyclone II)
 

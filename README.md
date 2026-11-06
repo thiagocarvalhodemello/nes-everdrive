@@ -97,15 +97,18 @@ Capas: [libretro-thumbnails](https://github.com/libretro-thumbnails/Nintendo_-_N
 
 ## 🔍 Busca
 
-| | |
-| :---: | :---: |
-| ![Teclado da busca](docs/screenshots/busca_teclado.png)<br>**Menu Principal → Busca** | ![Resultados](docs/screenshots/busca_resultados.png)<br>**Resultados** |
+| | | |
+| :---: | :---: | :---: |
+| ![Teclado da busca](docs/screenshots/busca_teclado.png)<br>**Menu Principal → Busca** | ![Progresso](docs/screenshots/busca_progresso.png)<br>**Buscando** | ![Resultados](docs/screenshots/busca_resultados.png)<br>**Resultados** |
 
 * Teclado na tela: o **direcional** escolhe a letra, **confirmar** digita, **SELECT** apaga, **START** busca
   e **cancelar** volta.
-* Procura o trecho digitado em **qualquer parte do nome**, sem diferenciar maiúsculas, na **pasta aberta**
-  no navegador (até 32 resultados).
-* Ao confirmar um resultado, o navegador para em cima do jogo, e daí o **menu do jogo** abre com a capa.
+* Procura o trecho digitado em **qualquer parte do nome**, sem diferenciar maiúsculas, em **todas as pastas**
+  do cartão (até 10 níveis; a pasta `EDFC` fica de fora). Só entram jogos `.nes`/`.fds` (até 31 resultados).
+* Enquanto busca, mostra **quantas pastas já leu de quantas achou** e quantos jogos encontrou;
+  **cancelar** interrompe e mostra o que já achou.
+* Ao confirmar um resultado, o navegador abre a pasta do jogo e para em cima dele; **cancelar** volta para as
+  pastas de cima normalmente.
 * Só lê o cartão.
 
 ---

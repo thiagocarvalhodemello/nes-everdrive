@@ -94,7 +94,10 @@ Atenção: a capa fica visível enquanto o menu (`$CA0D`) roda e é escondida qu
 ## Checklist de teste no hardware (o emulador não pega timing)
 - Trocar tema várias vezes com SELECT; a lista e o banner continuam corretos.
 - Ligar: o Menu Principal abre sozinho; "Lista de jogos" e cancelar voltam ao navegador; START reabre.
-- Busca numa pasta grande (100+ jogos): tempo aceitável, resultado certo, o navegador para no jogo.
+- Banner inteiro na TV (não cortado no topo); rodapé visível.
+- Telas de erro do OS (ex.: aviso A7 na primeira vez, cartão sem ROM) mostram só o código, sem linha de lixo.
+- Busca num cartão grande (várias pastas, 100+ jogos): progresso andando, tempo aceitável, cancelar
+  interrompe, resultado certo; escolher um jogo de subpasta abre a pasta dele e "voltar" sobe as pastas.
 - ESQ/DIR no menu do jogo troca de jogo (capa e nome acompanham).
 - Iniciar 2–3 jogos e abrir Recentes (mais recente primeiro).
 - Confirmar num jogo com capa e num sem capa; "Info da ROM"; "Carregar jogo" inicia o jogo.

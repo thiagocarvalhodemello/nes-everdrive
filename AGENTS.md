@@ -20,17 +20,20 @@ Leia antes de mexer:
    `$4400` antes de `$4401`, e devolvendo o **banco 8** mapeado em `$6000` ao voltar para o OS.
 3. **Não escreva no heap do OS** (banco 8, `$6000–$7FF7`). O alocador começa em `$6000`, termina o boot
    em `$7BA5` e entrega buffers (até 512 B, buffer de setor) acima disso. Exceções conhecidas e seguras:
-   sombra da nametable linhas 0–2 (`$6000–$605F`, cópia `$6400–$645F`), atributos `$63C0–$63C7` e a
+   sombra da nametable linhas 0–3 (`$6000–$607F`, cópia `$6400–$647F`), atributos `$63C0–$63C7` e a
    assinatura do tema `$7FF8–$7FFB`.
 4. **A página `$0300–$03FF` da RAM interna é dado do OS** (segmento DATA do cc65: tabelas de menu e
    variáveis da listagem). Nunca escreva lá (v1.4 escrevia e corrompia a lista até reiniciar).
-   Áreas livres: `$0100–$01AF` (pilha nunca desce de `$01D9`) e `$0200–$02FF` (`$0280–$02BF` = tabela
-   do Menu Principal enquanto ele está aberto).
-5. **Espaço é escasso e tem orçamento**: banco 15 `$FAE4–$FBFD` (282 B, usado 271), banco `$0B`
+   Áreas livres: `$0100–$01AF` (pilha nunca desce de `$01D9`), `$0200–$02FF` (`$0280–$02BF` = tabela
+   do Menu Principal enquanto ele está aberto) e `$0500–$06FF` (buffer de setor da busca; a pilha C não
+   desce de ~`$07A7` — `test_search.py` mede).
+5. **Espaço é escasso e tem orçamento**: banco 15 `$FAE5–$FBFD` (282 B, usado 278; `$FAE4` tem que ficar 0:
+   é a string vazia das telas de erro do OS), banco `$0B`
    (dados de tema ≤ `$6E10`, tabela do menu `$6E10–$6E5F` (cheio), paletas `$6E60–$6EEF`, loader ≤ `$6FB8`,
-   variáveis `$6FB8–$6FCF`, cache `$6FD0–$73CF`, **residente** `$73D0–OVL_BASE`, **overlay** `OVL_BASE–$7FDF`),
+   variáveis `$6FB8–$6FCF`, cache `$6FD0–$73CF`, **residente** `$73D0–OVL_BASE`, **overlay** `OVL_BASE–$7FDF` (busca: até `$7FFF`)),
    trampolim ≤ `$01B0`. Código novo grande vai para um **módulo de overlay** (`resident_runtime.py`):
-   cada módulo cabe na área de overlay (~1760 B) e roda sozinho (não chame um módulo de dentro de outro).
+   cada módulo cabe na área de overlay (~1840 B; `python tools/resident_runtime.py` mostra) e roda sozinho
+   (não chame um módulo de dentro de outro: devolva ao residente, como a busca faz com FIND → SCAN → FIND).
    Banco 14 livre: `$D5DE–$D5E0`, `$DBF2–$DBF4`. Os scripts têm `assert` — não os remova.
 6. **Banco 12 e 15 são criptografados** (XOR por posição). Patch = `plano ^ keystream`. Bancos 13/14 não.
    Veja a seção "Criptografia" em ARQUITETURA.md antes de alterar qualquer byte fora da região livre.
@@ -56,11 +59,11 @@ python tools/install_banner_theme.py      # aplica tudo em EDFC/OS.BIN (idempote
 python tools/test_theme_safety.py         # temas, SELECT/START, NMI, assinatura, reboot
 python tools/test_game_art.py             # menu do jogo, capas, página 3 intacta, "Carregar jogo"
 python tools/test_favorites.py            # favoritos e recentes; só FAVS.DAT/RECENTS.DAT são gravados
-python tools/test_search.py               # Menu Principal no boot, busca, resultados
+python tools/test_search.py               # Menu Principal no boot, busca em todas as pastas, resultados
 # 2. se a tela mudou: atualizar capturas
 python tools/capture_theme_screenshots.py
 python tools/capture_art_screenshots.py --arts <pasta com EDFC/ARTS> <roms...>
-python tools/capture_menu_screenshots.py  # Menu Principal, busca, recentes
+python tools/capture_menu_screenshots.py  # Menu Principal, busca (teclado, progresso, resultados), recentes
 # 3. commitar código + EDFC/OS.BIN + EDFC/OVL*.BIN juntos
 ```
 
@@ -81,7 +84,7 @@ Releases só quando pedido — ver COMO-FAZER.md.
 | `tools/resident_runtime.py` | **Residente** do banco `$0B` (despacho, tema, Menu Principal, loader de overlay) e montagem dos módulos `EDFC/OVL*.BIN`. |
 | `tools/art_runtime.py` | Trampolim (`$0100`) e módulo ART (capas + ESQ/DIR no menu do jogo). |
 | `tools/fav_runtime.py` | Front end de assembly (`asm_text`, `_call`…) e módulos FAV/REC (favoritos, recentes); gera os `.DAT` vazios. |
-| `tools/find_runtime.py` | Módulo BUSCA (teclado, varredura da pasta, resultados). |
+| `tools/find_runtime.py` | Módulos da busca: `OVLFIND` (teclado, resultados) e `OVLSCAN` (varredura de todas as pastas com progresso; leitor de diretório próprio). |
 | `EDFC/OVL*.BIN` | Módulos gerados (precisam bater com o `OS.BIN`). |
 | `EDFC/FAVS.DAT`, `EDFC/RECENTS.DAT` | Listas vazias (32 slots) que vão nos zips. |
 | `tools/test_full_banner_system.py` | Monta a imagem do banco `$0B` (pacotes de tema, paletas, loader, capas). Nome histórico. |

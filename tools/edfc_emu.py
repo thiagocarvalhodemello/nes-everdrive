@@ -770,13 +770,18 @@ class EverDriveN8Emu:
             if self.ppu_ctrl & 0x80:
                 self.trigger_nmi()
 
-    def boot_to_main_menu(self, max_frames=200):
-        """Run the boot until the OS shows the main menu (opened once after boot). True if seen."""
+    def boot_to_main_menu(self, max_frames=300):
+        """Run the boot until the OS shows the main menu (opened once after boot). True if seen.
+        A fresh cartridge RAM has no OS settings: the OS recreates them and shows error A7
+        waiting for a button (as on a real console the first time) - confirm it."""
         for _ in range(max_frames // 5):
             self.run_frames(5)
-            if "Menu Principal" in self.dump_screen_text():
+            txt = self.dump_screen_text()
+            if "Menu Principal" in txt:
                 self.run_frames(5)
                 return True
+            if any(l.strip().endswith("A7") for l in txt.splitlines()):
+                self.press_button(0x40, hold_frames=8, wait_frames=10)
         return False
 
     def boot_to_browser(self):

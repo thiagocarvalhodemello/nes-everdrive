@@ -58,10 +58,11 @@ leitura-modifica-escrita no `$4401` — uma interrupção que mude o índice no 
 | :--- | :--- |
 | `$00–$FF` | zero page do OS. `$28/$29` = ponteiro da pilha C (cc65), `$2A/$2B` = sreg, `$30/$31` = ptr temporário, `$9A–$9D` = temporários do upload de tela (`$8343`), `$9E/$A0/$A1` = NMI, `$A2` = "upload de VRAM em andamento" |
 | `$0100–$01FF` | pilha do 6502; nunca desce de `$01DF` (medido também nos favoritos: `$01DB`) → **`$0100–$01AF` livre** (trampolim + variáveis, `art_runtime.T_LIMIT`) |
-| `$0200–$02FF` | zerada no reset e nunca lida pelo OS → **livre** (capas: registro do arquivo + tabela OAM; listas: `$0200` linha de texto, `$0220–$024B` clusters, buffer, nome, contador; busca: `$0250` nome comparado; **`$0280–$02BF` tabela do Menu Principal** enquanto ele está aberto — ver `fav_runtime.py`) |
+| `$0200–$02FF` | zerada no reset e nunca lida pelo OS → **livre** (capas: registro do arquivo + tabela OAM; listas: `$0200` linha de texto, `$0220–$024B` clusters, buffer, nome, contador; busca: `$0200–$023F` linhas do progresso, `$0240` cluster lido, `$0244` fila de pastas, `$0250–$027F` nome comparado; **`$0280–$02BF` tabela do Menu Principal** enquanto ele está aberto — ver `fav_runtime.py`/`find_runtime.py`) |
 | `$0300–$03FF` | **DATA do OS (cc65)**: tabelas de menu (`$03B3`, `$03B9`, `$03C1`, `$03C9`, `$03D5`), variáveis (`$0350–$037F`), rotina copiada (`$03E0+`). **Proibido escrever.** Imagem de origem no banco 15 a partir de `$F9DA` |
 | `$0400–$04DA` | BSS do OS (ponteiros globais, `$0464`/`$0466` = flags/ordem da lista, `$04B8` = nº de entradas, `$0484` = joypad, `$0486`/`$0487` = máscaras confirmar/cancelar, `$04D4` = redesenhar tela, `$046E` = cluster da pasta `/EDFC`) |
-| `$0500–$07FF` | pilha C (cresce para baixo a partir de `$0800`) |
+| `$0500–$06FF` | nunca usada pelo OS (a pilha C não desce de ~`$07A7`; na busca, `$07B1` medido) → **buffer de setor de diretório da busca** (`find_runtime.SBUF`) |
+| `$0700–$07FF` | pilha C (cresce para baixo a partir de `$0800`) |
 
 ## 4. API do OS usada pelos patches
 Convenção cc65: empilhe todos os argumentos com os helpers e chame com **A/X iguais ao último
@@ -77,7 +78,7 @@ argumento** (exatamente como o OS faz); quem é chamado desempilha. Helpers: `$F
 | `$ABBD` | poll de USB nos laços ociosos (nosso hook IDLE) |
 | `$CA0D` | menu genérico com cursor (índice, tabela de itens, quantidade, início) |
 | `$CB50` | Menu Principal (tabela de itens agora no banco 15, 6 itens; resultado em `(sp),0`, despacho `$CB76…$CBBD`) |
-| `$A854` | começa tela de texto: limpa (banner entra pelo hook) e cursor x=2, y=1 (linha 3 da tela) |
+| `$A854` | começa tela de texto: limpa (banner entra pelo hook) e cursor x=2, y=1 (linha 4 da tela: linha y = y + 3) |
 | `$A864` | (str16) imprime linha e desce (`$048E` = y, máx. 24); `$9F = $7F` antes = linha destacada |
 | `$847C` | restaura a tela salva por `$845E` (o `$CA0D` salva ao abrir o menu) |
 | `$A451` / `$A476` | malloc(size16) / free(size16) — heap **LIFO** (o free só baixa `$0450`) |
@@ -95,15 +96,23 @@ argumento** (exatamente como o OS faz); quem é chamado desempilha. Helpers: `$F
 | `$95C4` | continua lendo o arquivo aberto (o emulador não simula a continuação — leia tudo numa chamada) |
 | `$AD3B` | acha subpasta — compara **exatamente 4 caracteres** (por isso `ARTS`, `EDFC`, `SAVE`, `MAPS`) |
 | `$9DC7` | acha arquivo pelo nome 8.3 de 11 caracteres (`"XXXXXXXXBIN"`) |
-| `$8DA9` | abre diretório (muda o diretório atual do FAT) — depois de buscar, **reabra `$8278`** (pasta do navegador) |
+| `$8DA9` | (cluster32; 0 = raiz) abre diretório: monta as tabelas por entrada (`*$0460/$0462/$0464`), a quantidade `$04B8` (< `$FE`), a pasta pai `$04BB` e `$04BA` (raiz). Ignora `.`/`..`/apagados. Depois de usar, **reabra `$8278`** (pasta do navegador) |
+| `$923B` | (índice16, nome16*, cluster32* ou 0, 0) lê a entrada: nome longo em `*$0468` (banco 8), primeiro cluster no ponteiro; 0 = ok. Não lê o arquivo (o `$BC71` lê) |
+| `$C67D` | depois do `$8DA9`: monta a tabela de ordem de exibição `*$0466` |
+| `$8275`, `*$0456` | profundidade da pasta do navegador e a seleção salva por nível (64 B), usadas pelo "voltar" |
 | `$D89E` | laço do navegador (redesenha se `$04D4`) |
 
 ## 5. Patches aplicados (fonte: `theme_runtime.os_patches`)
 | Endereço | Original | Novo |
 | :--- | :--- | :--- |
 | `$828C` | `JSR $83B0` (boot) | `JSR BOOT` — lê a assinatura e pede o tema salvo (sem assinatura: tema 0), para o IDLE rodar uma vez |
-| `$83F9` | fim da limpeza de tela | `JMP BANNER` — desenha o banner (linhas 0–1) + linha preta |
-| `$ABBD` | `JSR $EF47` | `JSR IDLE` — aplica o tema pedido no boot e grava `$0484 = $10` (START "apertado": o navegador abre o Menu Principal uma vez após o boot) |
+| `$83F9` | fim da limpeza de tela | `JMP BANNER` — banner nas linhas 1–2, linhas 0 (fica sob a borda da TV) e 3 pretas |
+| `$A56B`, `$A5A9` | `LDA #$40` (base `$6040` = linha 2 das rotinas de posição de texto `$A565`/`$A595`) | `#$60`: tudo que o OS escreve desce uma linha (lista nas linhas 4–24, telas de texto 4–27, menus) |
+| `$83F6` (banco 12) | `LDA #$40` (ponteiro de texto após limpar) | `#$60` |
+| `$840C`, `$8418` (banco 12) | upload parcial do cursor: coluna 1 das linhas 0–23 (`$6001`/PPU `$2001`) | linhas 1–24 (`$6021`/`$2021`) |
+| `$ABBD` | `JSR $EF47` | `JSR IDLE` — aplica o tema pedido no boot |
+| `$D91E` | `LDA $0484` (laço ocioso do navegador) | `JSR H_JOY` → `BJOY` (residente): na 1ª vez após ligar "aperta START" (`$0484 = $10`, `$A2 = 1` para a NMI não sobrescrever até o `START`) → Menu Principal; depois só devolve `$0484` |
+| `$ECF1`, `$ECF8`, `$ECFF`, `$ED06`, `$ED23` | mensagens da tela de erro do OS (a tradução as tinha posto em `$FAEB…`, hoje nosso código: saíam como lixo) | `$FAE4` (string vazia): a tela mostra só o código, como o OS de fábrica |
 | `$DBE7` | START = reiniciar último jogo | `JSR $DBED; JMP $D89E`; em `$DBED` (bytes mortos) o stub `H_START` (`LDA #5; JMP FAR`) |
 | `$DBFC` | SELECT = Menu Principal | `JSR H_SEL` (próximo tema + redesenho, no banco `$0B`) |
 | `$D579` | 3 itens | 3 itens: Carregar jogo, Info da ROM, Favoritar |
@@ -119,40 +128,41 @@ argumento** (exatamente como o OS faz); quem é chamado desempilha. Helpers: `$F
 | `$D5B1` | `JSR $B7AC` ("Carregar jogo") | `JSR H_LAUNCH` (grava em Recentes e então `$B7AC`) |
 | `$CA41`, `$CAC1`, `$CAC2` (em tempo de execução) | 1ª linha `$0B - n`, linha `+= 2` | só durante o Menu Principal: `$0F - n` e `+= 1` (`LDY #2; TYA; LSR; ADC`) — 9 itens não cabem na caixa do `$CA0D`; o `MMENU` restaura os bytes logo depois |
 | `$C81F`, `$C833` | atributos da barra de status: linha 6 = `$FF` (linhas 24–27) | linha 7 = `$0F` (linhas 28–29, fim da tela, 2 linhas de altura) |
-| `$C8BF`, `$C8C7`, `$C8DF`, `$C941` | nome selecionado nas linhas `$17`/`$18` (tela 25/26) | `$1A`/`$1B` (tela 28/29) |
+| `$C8BF`, `$C8C7`, `$C8DF`, `$C941` | nome selecionado nas linhas `$17`/`$18` (tela 25/26) | `$19`/`$1A` (tela 28/29) |
 | `$8442`, `$8449` (banco 12) | upload parcial ao mover o cursor: PPU `$2320` ← `$6320` | PPU `$2380` ← `$6380` |
 | `$CB34` | `JMP $CA40` (laço do menu sem confirmar/cancelar) | `JMP $D5C5`: no menu do jogo (tabela `$03C1`, único byte baixo `$C1`) ESQ/DIR saem com `$FE`/`$FD` |
 | `$D5C5–$D5DD` | código morto do "Apenas Selec." | `theme_runtime.menu_lr_code` (25 bytes) |
 | `$8103` | (v1.4 tinha hook) | original `LDA $2002 / PLA / RTI` |
 | `$F7B9–$F899` + 14 ponteiros em `$D1C7…$D251` | textos do "Sobre" | crédito do mod e controles atuais (`theme_runtime.ABOUT_LINES`, máx. 225 bytes) |
-| `$63C0`, `$63C7` (sombra) | atributo `$05` | `$0A`: cantos do banner usam a paleta 2 (ícones) |
+| `$63C0–$63C7` (sombra) | atributo `$05` | `$55` (linhas 0–3 na paleta 1); cantos `$63C0`/`$63C7` = `$AA` (paleta 2, ícones) |
 
 ## 6. Nosso código
 ### Banco 15, região `$FAE4–$FBFD` (`theme_runtime.build_runtime`)
-`$FAE4` id da chamada longa, `$FAE5` tema atual, `$FAE6` tema pedido (bit 7 = forçar). Rotinas:
+`$FAE4` fica sempre 0 (string vazia das mensagens de erro), `$FAE5` tema atual, `$FAE6` tema pedido
+(bit 7 = forçar), `$FAE7` id da chamada longa. Rotinas:
 `BANNER`/`BANNER_BODY`, `BOOT`, `APPLY` (paleta + tiles via loader do banco `$0B`, banner, assinatura),
-`IDLE`, stubs `H_INFO`/`H_MENU`/`H_MMENU`/`H_SEL`/`H_LAUNCH`/`H_FAVADD` (`LDA #id; JMP FAR`; `FAR` grava o id,
+`IDLE`, stubs `H_INFO`/`H_MENU`/`H_MMENU`/`H_SEL`/`H_JOY`/`H_LAUNCH`/`H_FAVADD` (`LDA #id; JMP FAR`; `FAR` grava o id,
 mapeia `$0B` e salta para `DISPATCH`). Ids: 0 INFO, 1 MENU, 2 MMENU, 3 SEL, 4 FAVADD, 5 START (stub em `$DBED`),
-6 LAUNCH. Usado: 271/282 bytes.
+6 LAUNCH, 7 JOY. Usado: 278/282 bytes.
 
 ### Banco `$0B` (montado em `test_full_banner_system.build_bank11_image`)
 | Endereço | Conteúdo |
 | :--- | :--- |
 | `$6000` | ponteiros dos 9 pacotes |
-| `$6012…` | pacotes: nametable 64 B (linhas 0–1) + nº de tiles + (slot, 16 B) por tile (até `$6E10`) |
+| `$6012…` | pacotes: nametable 64 B (banner, desenhado nas linhas 1–2) + nº de tiles + (slot, 16 B) por tile (até `$6E10`) |
 | `$6E10` | tabela + textos do Menu Principal (origem da cópia para `$0280`) e "Falta EDFC/OVL*.BIN" (80 B, cheio) |
 | `$6E60` | paletas dos temas (9 × 16 cores, `banner_art.palette16`) |
 | `$6F00` | loader (paleta + tiles; usa `$9A–$9D`), até `$6FB3` |
 | `$6FB8` | `OVL_CUR` (overlay carregado; 0 no boot), `V_MSEL` (item do Menu Principal), `OVL_WANT` |
 | `$6FC0` | variáveis das listas (16 B, `fav_runtime.VARS_SRC`; `V_DIR` = ESQ/DIR do menu do jogo) |
-| `$6FD0` | cache das listas/resultados: 32 × 32 B (nome 27 + NUL, contador 28–30, slot/índice 31) |
+| `$6FD0` | cache das listas/resultados: 32 × 32 B (listas: nome 27 + NUL, contador 28–30, slot 31; busca: nome 26 + NUL, profundidade 27, cluster da pasta 28–30, índice 31; entrada 31 = texto digitado) |
 | `$73D0` | **residente** (`resident_runtime.py`): `DISPATCH`, `SELT`, `R_INFO`/`R_MENU`/`R_FAVADD`, `LAUNCH`, `START`, `MMENU`, `OVL`, `CALLI`, `SETUP`…, `SHOWMSG`/`PUTS`, `ENTRY`, imagem do trampolim (até ~`$7850`) |
-| `$7900` | **área de overlay** (até `$7FDF`): o módulo carregado do SD (`OVL_BASE` = 1ª página após o residente) |
+| `OVL_BASE` (~`$78AE`) | **área de overlay** (até `$7FDF`; a busca vai até `$7FFF`): o módulo carregado do SD (`OVL_BASE` = fim do residente; o loader copia exatamente `OVL_BASE–$7FFF`) |
 | `$7FE0` | rascunho: cópia de `$0300–$030F` durante `$BC71` (módulo ART) |
 
 ### Overlays (`resident_runtime.py`)
 O banco `$0B` não comporta tudo, então capas, favoritos, recentes e busca são **módulos** em arquivos
-`EDFC/OVLART.BIN`, `OVLFAV.BIN`, `OVLREC.BIN`, `OVLFIND.BIN`, montados para `OVL_BASE` e gerados por
+`EDFC/OVLART.BIN`, `OVLFAV.BIN`, `OVLREC.BIN`, `OVLFIND.BIN`, `OVLSCAN.BIN`, montados para `OVL_BASE` e gerados por
 `install_banner_theme.py` junto com o `OS.BIN`. Cabeçalho: `'O'`, id, build id (2 bytes, hash dos
 símbolos do residente — um arquivo de outra build é recusado), depois a tabela de `JMP`s.
 `OVL(id)`: se `OVL_CUR` ≠ id, acha o arquivo em `/EDFC` (`$9DC7`), desliga a renderização, lê os setores
@@ -162,8 +172,11 @@ as listas/busca mostram "Falta EDFC/OVL*.BIN". Os módulos não chamam `SETUP` (
 `OVL`); chamadas ao OS usam `JSR CALLI` + 3 bytes (destino, A), que preserva X/Y.
 
 ### Menu Principal, Recentes e Busca
-- **Boot**: `BOOT` sempre pede um tema; o primeiro `IDLE` aplica e grava `$0484 = $10`; o laço do
-  navegador lê isso como START → `START` copia a tabela para `$0280` e chama `$CB50`.
+- **Boot**: `BOOT` sempre pede um tema e o primeiro `IDLE` o aplica. A primeira passada do laço ocioso do
+  navegador (`$D91E` → `BJOY`, `V_BOOT` = 0 após ligar) grava START em `$0484` e trava a leitura da NMI
+  (`$A2 = 1`); o laço trata como START → `START` (libera `$A2`) copia a tabela para `$0280` e chama `$CB50`.
+  (Antes o `IDLE` gravava o START: ele roda primeiro numa espera de botão do boot (`$9F82`), então o START
+  fechava o aviso A7 "configurações recriadas" ou era sobrescrito pela NMI/OS.)
 - **`MMENU`** (no `$CB68`): restaura o cursor (`V_MSEL`), ajusta o espaçamento do `$CA0D`, chama;
   0 Lista de jogos e cancelar → `$FF` (fecha); 1 Busca, 2 Favoritos, 3 Recentes → módulo, depois `$847C`,
   empilha de novo os argumentos e reabre; 4–8 → devolve 0–4 para o despacho original do OS.
@@ -173,10 +186,23 @@ as listas/busca mostram "Falta EDFC/OVL*.BIN". Os módulos não chamam `SETUP` (
   início). A tela ordena o cache pelo contador (bolha).
 - **Favoritos** (`OVLFAV`): confirmar devolve C=1 com o registro em `*$046A`; o residente (`LAUNCH_GO`)
   carrega `OVLREC`, grava em Recentes e inicia.
-- **Busca** (`OVLFIND`): teclado 10×4, consulta até 18 caracteres. Varre os índices de arquivo 0..n-1
-  (ordem do diretório, aproveita o cache de setor do OS) com `$BC71` num buffer de 512 B do heap, compara
-  sem diferenciar maiúsculas, até 32 resultados no cache. Escolher um resultado procura a posição na
-  tabela `*$0466`, grava `$8276`, pede redesenho (`$04D4`) e fecha o menu.
+- **Busca**: dois módulos encadeados pelo `MMENU`: `OVLFIND` E0 (teclado novo) → `OVLSCAN` E0 (varredura)
+  → `OVLFIND` E1 (resultados; voltar → E2, teclado com a consulta). Teclado 10×4, consulta até 18
+  caracteres; consulta, tamanho e cursor ficam na entrada 31 do cache (sobrevivem à troca de módulo).
+  Varre **todas as pastas em largura** a partir da raiz: fila (anel de 128 × 4 B: cluster 24 bits +
+  profundidade) num buffer de 512 B do heap do OS (malloc/free), cada pasta lida uma única vez.
+  A **raiz** vai pelo OS (`$8DA9` + `$923B` por entrada: ele conhece a raiz fixa do FAT16). As
+  **subpastas** são lidas direto: cadeia de clusters (`$969A`, `$C404`, fim de cadeia FAT16/FAT32),
+  setores com `$AAD5` para `$0500` e entradas de 32 B analisadas no módulo (nome longo = byte baixo dos
+  caracteres LFN; sem LFN, os 11 caracteres "NOME    EXT" como o OS mostra), com o mesmo filtro e índice do
+  `$8DA9` (sem `$E5`, `.`, oculto/rótulo; para em `$FE`). É ~10× mais rápido que `$923B`, que relê e remonta
+  cada entrada. Só `.nes`/`.fds`, primeiros 47 caracteres, sem diferenciar maiúsculas; `EDFC` e níveis abaixo
+  de 10 ficam de fora; até 31 resultados (nome 26 + NUL, profundidade, cluster da pasta, índice).
+  Progresso ("Pastas lidas: X de Y", achados): 2 linhas (64 B) escritas direto no PPU no vblank, como a barra
+  de status do OS (`$A2 = 1` durante a cópia), uma vez por pasta e por achado; cancelar (`$0484`) interrompe.
+  Escolher um resultado: `$8278` = pasta, `$8DA9` + `$C67D` (como o navegador), `$8275` = profundidade com
+  as seleções dos níveis de cima zeradas (`*$0456`, para o "voltar"); confere com `$923B` se o índice tem o
+  mesmo nome (senão procura o nome na pasta), posição em `*$0466` → `$8276`, redesenho (`$04D4`), fecha.
 
 ### Capas (`art_runtime.py`, módulo ART)
 Trampolim copiado para `$0100` (mapeia banco 8 só durante chamadas ao OS e volta para `$0B`).
@@ -202,8 +228,9 @@ malloc do OS (recusa se `$0450` ≥ `$7C00`), liberado antes de voltar ao OS ou 
   `*$046A` (e o residente grava em Recentes + `$B7AC`); SELECT zera o cluster do slot; cancelar volta ao menu.
 
 ### CHR e tela
-Slots livres da fonte para tiles de banner: `$0B–$1E` e `$8B–$9F`; `$1F` = tile vazio (linha 2).
-Atributos `$63C0–$63C7 = $05`: linhas 0–1 usam a paleta 1 (= cores do tema: sh, txt, hl).
+Slots livres da fonte para tiles de banner: `$0B–$1E` e `$8B–$9F`; `$1F` = tile vazio (cor de fundo
+universal: linhas 0 e 3). Atributos `$63C0–$63C7 = $55`: linhas 0–3 usam a paleta 1 (= cores do tema:
+sh, txt, hl); o banner fica nas linhas 1–2 porque a linha 0 some sob a borda de muitas TVs.
 
 ## 7. Emulador (`tools/edfc_emu.py`) — limitações
 - Roda o decriptador real (página tirada de `EDFC-ORIGINAL/OS.BIN`).
@@ -212,7 +239,10 @@ Atributos `$63C0–$63C7 = $05`: linhas 0–1 usam a paleta 1 (= cores do tema: 
 - Sem tempo de PPU real (espera de vblank é acelerada), sem decaimento de OAM, sem conflitos
   de escrita durante a renderização. **Bugs de timing não aparecem aqui.**
 - Pastas ocultas, `releases/` e `sdcard/` são ignoradas ao montar o cartão a partir do repo.
-- `tools/ppu_timing.py` (`TimedEmu`) é um modo com tempo aproximado (29.780 ciclos/quadro, vblank de
+- RAM do cartucho zerada: o OS recria as configurações e mostra o aviso **A7** esperando um botão (no
+  console isso só acontece quando as configurações se perdem). `boot_to_main_menu()` confirma o aviso.
+- `tools/ppu_timing.py` (`TimedEmu`) é um modo com tempo aproximado (29.780/29.781 ciclos/quadro alternados
+  — com um valor fixo a espera `BIT $2002` do OS fica presa em fase com a leitura de `$2002` da NMI —, vblank de
   2.273 ciclos, NMI real, leitura de `$2002` como no hardware, setor de SD = 16.000 ciclos) que lista
   escritas no PPU fora do vblank com a tela ligada (`emu.unsafe`). Segure botões ≥ 8 quadros nele: o OS
   só lê o controle depois de cada espera de vblank.

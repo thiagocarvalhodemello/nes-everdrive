@@ -1,14 +1,20 @@
 """
 End-to-end test for the search (main menu -> Busca, overlay EDFC/OVLFIND.BIN).
 
-SD card (temp dir): a folder, ROMs "Alpha Quest", "Beta Racer", "Super Alpha Bros",
-"zeta alpha (lower case)", a .TXT.
+SD card (temp dir): ROMs "Alpha Quest", "Beta Racer", "Super Alpha Bros",
+"zeta alpha (lower case)", a .TXT; Hacks/ with "Alpha Hack" .nes, an "alpha" .sav, a plain
+8.3 ALPHAZ.NES (no long name), "Zeta Alpha Two" .nes and Hacks/Deep/"Alpha Deep" .fds; an
+"ALPHA" .NES inside EDFC (system folder, never searched). The root goes through the OS ($923B),
+the subfolders through the module's own directory parser.
 Checks:
   * main menu: Lista de jogos first, Busca second; Busca opens the keyboard
   * typing A-L-P-H-A with the d-pad + confirm, SELECT erases, START searches
-  * results: the 3 names containing "alpha" (case-insensitive), not Beta
-  * confirm on a result: back in the browser with that file selected (status bar)
-  * "ZZQ" -> "Nada encontrado nesta pasta."
+  * progress screen while every folder is scanned
+  * results: the 5 .nes/.fds names containing "alpha" (any case) in all folders (not Beta,
+    the .sav, the .TXT or anything in EDFC)
+  * confirm on a result: back in the browser with that file selected (status bar), also in
+    a subfolder two levels down; cancel then walks back up to Hacks and the root
+  * "ZZQ" -> "Nada encontrado."
   * nothing written to the card, OS DATA page $0300 unchanged, heap pointer restored
   * missing OVLFIND.BIN -> message, menu still works
 
@@ -26,6 +32,10 @@ from test_favorites import make_rom
 UP, DOWN, LEFT, RIGHT, SELECT, START, B, A = 0x08, 0x04, 0x02, 0x01, 0x20, 0x10, 0x40, 0x80
 NAMES = ["Alpha Quest (World).nes", "Beta Racer (World).nes", "Super Alpha Bros (USA).nes",
          "zeta alpha (lower case).nes"]
+SUB = [("Hacks", "Alpha Hack (Hack).nes"), ("Hacks", "alpha save.sav"),
+       (os.path.join("Hacks", "Deep"), "Alpha Deep (Hack).fds"), ("EDFC", "ALPHAX.NES"),
+       ("Hacks", "ALPHAZ.NES"), ("Hacks", "Zeta Alpha Two (Hack).nes")]
+FOUND = [NAMES[0], NAMES[2], NAMES[3], SUB[0][1], SUB[2][1], "ALPHAZ  NES", SUB[5][1]]
 
 
 def build_sd(root, find=True):
@@ -35,11 +45,14 @@ def build_sd(root, find=True):
     shutil.copy(os.path.join(REPO, "EDFC", "MAPROUT.BIN"), os.path.join(root, "EDFC"))
     for f in ("000.RBF", "001.RBF"):
         shutil.copy(os.path.join(REPO, "EDFC", "MAPS", f), os.path.join(root, "EDFC", "MAPS"))
-    files = ["OVLART.BIN", "OVLFAV.BIN", "OVLREC.BIN", "RECENTS.DAT", "FAVS.DAT"] + (["OVLFIND.BIN"] if find else [])
+    files = ["OVLART.BIN", "OVLFAV.BIN", "OVLREC.BIN", "RECENTS.DAT", "FAVS.DAT"] + (["OVLFIND.BIN", "OVLSCAN.BIN"] if find else [])
     for f in files:
         shutil.copy(os.path.join(REPO, "EDFC", f), os.path.join(root, "EDFC"))
     open(os.path.join(root, "EDFC", "SAVE", "KEEP.TXT"), "wb").write(b"x")
     open(os.path.join(root, "notes.txt"), "wb").write(b"alpha notes")
+    os.makedirs(os.path.join(root, "Hacks", "Deep"))
+    for i, (d, n) in enumerate(SUB):
+        open(os.path.join(root, d, n), "wb").write(make_rom(30 + i))
     for i, n in enumerate(NAMES):
         open(os.path.join(root, n), "wb").write(make_rom(10 + i))
 
@@ -102,25 +115,73 @@ def main():
         emu.press_button(SELECT, wait_frames=12)                # erase the X
         pos = type_text(emu, "HA", pos)
         expect("Nome: ALPHA_" in screen(emu), "typed ALPHA (SELECT erased a letter)")
-        emu.press_button(START, wait_frames=200)
+        sp = [0x800]
+        step0 = emu.step
+
+        def step():
+            sp[0] = min(sp[0], emu.ram[0x28] | emu.ram[0x29] << 8)
+            return step0()
+        emu.step = step
+        emu.press_button(START, wait_frames=1)
+        seen = ""
+        for _ in range(400):
+            emu.run_frames(1)
+            t = screen(emu)
+            if "Buscando" in t and "Pastas lidas:" in t:
+                seen = t
+            if "Resultados" in t:
+                break
+        expect("Buscando em todas as pastas" in seen and "Encontrados:" in seen and " de " in seen,
+               "progress screen during the scan")
+        emu.run_frames(30)
+        emu.step = step0
+        expect(0x700 <= sp[0] < 0x800, f"cc65 stack stays above the sector buffer $0500-$06FF (lowest ${sp[0]:04X})")
         txt = screen(emu)
-        found = [n for n in NAMES if n[:20] in txt]
-        expect("Resultados" in txt and found == [NAMES[0], NAMES[2], NAMES[3]],
-               f"results: names containing 'alpha', case-insensitive ({found})")
-        emu.press_button(DOWN, wait_frames=15)
-        emu.press_button(B, wait_frames=120)                    # -> "Super Alpha Bros"
-        txt = screen(emu)
-        status = [l for l in txt.splitlines() if l.startswith("28:")]
+        found = [n for n in FOUND + [NAMES[1], SUB[1][1], "ALPHAX"] if n[:20] in txt]
+        expect("Resultados" in txt and sorted(found) == sorted(FOUND) and "ALPHAX" not in txt,
+               f"results: .nes/.fds names containing 'alpha' in every folder but EDFC ({found})")
+
+        def choose(name):
+            rows = [l for l in screen(emu).splitlines() if "lpha" in l.lower() and "Resultados" not in l and "Nome" not in l]
+            k = next(i for i, l in enumerate(rows) if name[:20] in l)
+            for _ in range(k):
+                emu.press_button(DOWN, wait_frames=15)
+            emu.press_button(B, wait_frames=150)
+            t = screen(emu)
+            return t, [l for l in t.splitlines() if l.startswith("28:")]
+
+        txt, status = choose(NAMES[2])
         expect("Menu Principal" not in txt and status and "Super Alpha Bros" in status[0],
                f"result chosen: browser with it selected ({status})")
         emu.press_button(B, wait_frames=90)
         expect("Carregar jogo" in screen(emu) and "Super Alpha" in screen(emu), "its game menu opens")
         emu.press_button(A, wait_frames=60)
 
+        open_search(emu)                                        # (the game menu loaded another module)
+        type_text(emu, "ALPHA", (0, 0))
+        emu.press_button(START, wait_frames=300)
+        txt, status = choose(SUB[2][1])
+        expect(status and "Alpha Deep" in status[0] and "Alpha Quest" not in txt,
+               f"result in Hacks/Deep: browser opens that folder with it selected ({status})")
+        emu.press_button(A, wait_frames=120)
+        txt = screen(emu)
+        expect("Alpha Hack" in txt and "Deep" in txt and "Alpha Quest" not in txt, "cancel -> parent folder Hacks")
+        emu.press_button(A, wait_frames=120)
+        txt = screen(emu)
+        expect("Hacks" in txt and "Alpha Quest" in txt, "cancel again -> root")
+        for want in (SUB[5][1], "ALPHAZ  NES"):              # after a folder / an 8.3 name in Hacks
+            open_search(emu)
+            type_text(emu, "ALPHA", (0, 0))
+            emu.press_button(START, wait_frames=300)
+            txt, status = choose(want)
+            expect(status and want in status[0], f"result in Hacks: {want!r} selected ({status})")
+
         open_search(emu)
+        for _ in range(5):
+            emu.press_button(SELECT, wait_frames=12)
         type_text(emu, "ZZQ", (0, 0))
         emu.press_button(START, wait_frames=200)
-        expect("Nada encontrado nesta pasta." in screen(emu), "no match -> message")
+        expect("Nada encontrado." in screen(emu), "no match -> message")
         emu.press_button(B, wait_frames=60)
         expect("Nome: ZZQ_" in screen(emu), "back to the keyboard with the query")
         emu.press_button(A, wait_frames=90)

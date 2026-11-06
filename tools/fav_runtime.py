@@ -27,7 +27,7 @@ FAV_SLOTS = 32
 FAV_TAIL = 503
 FAV_MAGIC = b"EDFCFAV1"
 SEQ_OFF = 271
-ROWS = 19                 # visible list lines (y = 3..21)
+ROWS = 19                 # visible list lines (y = 3..21, screen rows 6..24)
 
 # OS
 PUSHA, PUSH0, PUSHAX, PUSHEAX = 0xF3B2, 0xF3C4, 0xF3C8, 0xF1EC

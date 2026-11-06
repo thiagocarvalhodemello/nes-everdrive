@@ -56,7 +56,7 @@ def build_sd(root, favs=True):
     shutil.copy(os.path.join(REPO, "EDFC", "MAPROUT.BIN"), os.path.join(root, "EDFC"))
     for f in ("000.RBF", "001.RBF"):
         shutil.copy(os.path.join(REPO, "EDFC", "MAPS", f), os.path.join(root, "EDFC", "MAPS"))
-    for f in ("OVLART.BIN", "OVLFAV.BIN", "OVLREC.BIN", "OVLFIND.BIN", "RECENTS.DAT"):
+    for f in ("OVLART.BIN", "OVLFAV.BIN", "OVLREC.BIN", "OVLFIND.BIN", "OVLSCAN.BIN", "RECENTS.DAT"):
         shutil.copy(os.path.join(REPO, "EDFC", f), os.path.join(root, "EDFC"))
     open(os.path.join(root, "EDFC", "SAVE", "KEEP.TXT"), "wb").write(b"x")
     if favs:

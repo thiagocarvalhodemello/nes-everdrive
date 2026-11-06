@@ -24,7 +24,7 @@ THEME_ID = 0xFAE5
 SIG = 0x7FF8
 HEAP_LO, HEAP_HI = 0x7BA5, 0x7FF7          # OS bump-allocator window in bank 8
 NMI_OK_RAM = range(0x0000, 0x0800)         # OS NMI writes $9E/$A0/$A1/$0484 + stack
-NMI_OK_B15 = range(0xFAE4, 0xFAE7)         # theme runtime variables
+NMI_OK_B15 = range(0xFAE5, 0xFAE8)         # theme runtime variables ($FAE4 stays 0)
 
 
 class Probe:
@@ -86,8 +86,10 @@ def check_applied(emu, pkgs, tid, label, nt_from_shadow=False):
     if bytes(emu.palette[0:16]) != bytes(pkg['palette']):
         print(f"    FAIL {label}: palette {bytes(emu.palette[0:16]).hex()} != {bytes(pkg['palette']).hex()}")
         ok = False
-    nt = bytes(emu.prg_ram[8][0:96]) if nt_from_shadow else bytes(emu.vram[0:96])
-    if nt != bytes(pkg['nametable']):
+    # screen rows 0-3: black row (overscan), banner rows 1-2, black spacer row 3
+    nt = bytes(emu.prg_ram[8][0:128]) if nt_from_shadow else bytes(emu.vram[0:128])
+    blank = bytes(pkg['nametable'][64:96])
+    if nt != blank + bytes(pkg['nametable'][:64]) + blank:
         print(f"    FAIL {label}: banner nametable in {'shadow' if nt_from_shadow else 'VRAM'} differs")
         ok = False
     bad = [s for s, tb in pkg['tiles'] if bytes(emu.chr_ram[s*16:(s+1)*16]) != bytes(tb)]

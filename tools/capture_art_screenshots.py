@@ -30,6 +30,9 @@ def main():
         for d in ("EDFC/MAPS", "EDFC/SAVE", "EDFC/ARTS"):
             os.makedirs(os.path.join(root, d))
         shutil.copy(os.path.join(REPO, "EDFC", "MAPROUT.BIN"), os.path.join(root, "EDFC"))
+        for f in os.listdir(os.path.join(REPO, "EDFC")):        # the cover code is EDFC/OVLART.BIN
+            if f.startswith("OVL") or f.endswith(".DAT"):
+                shutil.copy(os.path.join(REPO, "EDFC", f), os.path.join(root, "EDFC"))
         shutil.copy(os.path.join(REPO, "EDFC", "MAPS", "000.RBF"), os.path.join(root, "EDFC", "MAPS"))
         open(os.path.join(root, "EDFC", "SAVE", "KEEP.TXT"), "wb").write(b"x")
         for r in a.roms:

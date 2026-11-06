@@ -5,7 +5,7 @@ Builds a throwaway SD card (temp dir) with:
   * a ROM that has art in EDFC/ARTS/<fingerprint>.BIN (synthetic test image)
   * a ROM without art
 boots EDFC/OS.BIN, opens "Info da ROM" for each and checks:
-  * art ROM: 48 sprites at x=192/y=48, 8x16 mode, sprite rendering on,
+  * art ROM: 48 sprites at x=192/y=56, 8x16 mode, sprite rendering on,
     CHR $1000 and sprite palettes match the art file, C stack balanced,
     art code never writes $6000-$7FFF itself, sprites off after closing
   * no-art ROM: popup unchanged, no sprites, returns normally
@@ -49,7 +49,7 @@ def build_sd(root, art_rom, plain_rom, art):
     shutil.copy(os.path.join(REPO, "EDFC", "MAPROUT.BIN"), os.path.join(root, "EDFC"))
     for f in ("000.RBF", "001.RBF"):
         shutil.copy(os.path.join(REPO, "EDFC", "MAPS", f), os.path.join(root, "EDFC", "MAPS"))
-    for f in ("OVLART.BIN", "OVLFAV.BIN", "OVLREC.BIN", "OVLFIND.BIN", "RECENTS.DAT"):
+    for f in ("OVLART.BIN", "OVLFAV.BIN", "OVLREC.BIN", "OVLFIND.BIN", "OVLSCAN.BIN", "RECENTS.DAT"):
         shutil.copy(os.path.join(REPO, "EDFC", f), os.path.join(root, "EDFC"))
     open(os.path.join(root, "EDFC", "SAVE", "KEEP.TXT"), "wb").write(b"x")
     open(os.path.join(root, "Test Game With Art (World).nes"), "wb").write(art_rom)
@@ -124,9 +124,9 @@ def main(shot=None):
         oam = emu.oam
         expect(emu.ppu_mask & 0x10 and emu.ppu_ctrl & 0x20,
                f"{label}: sprites on, 8x16 (mask=${emu.ppu_mask:02X} ctrl=${emu.ppu_ctrl:02X})")
-        expect(oam[0] == 47 and oam[1] == 1 and oam[3] == 192 and oam[47 * 4] == 47 + 80 and oam[47 * 4 + 3] == 248
+        expect(oam[0] == 55 and oam[1] == 1 and oam[3] == 192 and oam[47 * 4] == 55 + 80 and oam[47 * 4 + 3] == 248
                and all(oam[i * 4] >= 0xEF for i in range(48, 64)),
-               f"{label}: OAM layout 64x96 at (192,48), unused sprites hidden")
+               f"{label}: OAM layout 64x96 at (192,56), unused sprites hidden")
         pal = art[0x604:0x610]
         got = bytes(emu.palette[0x11 + k * 4 + j] for k in range(4) for j in range(3))
         expect(bytes(emu.chr_ram[0x1000:0x1600]) == art[:0x600] and got == pal

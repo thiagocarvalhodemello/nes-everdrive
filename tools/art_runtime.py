@@ -47,7 +47,7 @@ C0, C1, C2, C3 = 0x9A, 0x9B, 0x9C, 0x9D    # CRC accumulator (zero page scratch)
 OAM = 0x0200
 REC = 0x0200               # record buffer (consumed before the OAM table is built)
 SAVE3 = 0x7FE0             # bank $0B scratch: $BC71 writes the 8.3 name at buf+$100 (11 bytes)
-ART_X, ART_Y = 192, 48
+ART_X, ART_Y = 192, 56
 
 # ---- RAM trampoline (assembled for $0100, stored in bank $0B and copied)
 T = 0x0100

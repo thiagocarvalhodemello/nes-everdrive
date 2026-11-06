@@ -33,9 +33,10 @@ from art_runtime import (build_tramp, art_module_listing, SAVE3, EDFC_CLUSTER, B
                          OS_WAIT_VBL, OS_WAIT_BTN, OS_MENU, OS_READ_FILE, OS_FIND_FILE,
                          PUSHA, PUSH0, PUSHAX, PUSHEAX)
 
-VARS2 = {"OVL_CUR": 0, "V_MSEL": 1, "OVL_WANT": 2}   # at B11_VARS2 (8 bytes)
-OVL_ART, OVL_FAV, OVL_REC, OVL_FIND = 1, 2, 3, 4
-OVL_FILES = {OVL_ART: "OVLART  BIN", OVL_FAV: "OVLFAV  BIN", OVL_REC: "OVLREC  BIN", OVL_FIND: "OVLFIND BIN"}
+VARS2 = {"OVL_CUR": 0, "V_MSEL": 1, "OVL_WANT": 2, "V_BOOT": 3}   # at B11_VARS2 (8 bytes; 0 at power-on)
+OVL_ART, OVL_FAV, OVL_REC, OVL_FIND, OVL_SCAN = 1, 2, 3, 4, 5
+OVL_FILES = {OVL_ART: "OVLART  BIN", OVL_FAV: "OVLFAV  BIN", OVL_REC: "OVLREC  BIN", OVL_FIND: "OVLFIND BIN",
+             OVL_SCAN: "OVLSCAN BIN"}
 OS_MAIN_MENU, OS_START_GAME, OS_RESTORE_SCR = 0xCB50, 0xB7AC, 0x847C
 OS_TXT_BEGIN, OS_REFRESH_NT, OS_TXT_LINE = 0xA854, 0x8343, 0xA864
 OVL_END = SAVE3             # module code + variables must end before the SAVE3 scratch
@@ -63,11 +64,11 @@ def main_table_data():
 def resident_source(apply_addr, ovl_base, build):
     _call = F._call
     e = lambda k: ovl_base + 4 + 3 * k
-    pages = (0x8000 - ovl_base) >> 8
-    nsect = (pages + 1) // 2
+    pages = 0x80 - (ovl_base >> 8)           # pages touched by OVL_BASE..$7FFF
+    nsect = (0x8000 - ovl_base + 511) // 512
     names = b"".join(OVL_FILES[k].encode() for k in sorted(OVL_FILES))
     jt = ", ".join(f"(({x})-1) & 255, (({x})-1) >> 8"
-                   for x in ("R_INFO", "R_MENU", "MMENU", "SELT", "R_FAVADD", "START", "LAUNCH"))
+                   for x in ("R_INFO", "R_MENU", "MMENU", "SELT", "R_FAVADD", "START", "LAUNCH", "BJOY"))
     return f"""
 DISPATCH: LDA {FAR_ID}
         ASL
@@ -148,7 +149,22 @@ LA1:    JSR ZPOUT
         RTS
 
 ; ---- START in the browser (and once after boot): menu table -> page 2, OS main menu
-START:  JSR SETUP
+; ---- browser idle loop ($D91E, was LDA $0484): A = joypad byte. The first call after power-on
+;      "presses START" (main menu) and keeps it: $A2 = 1 stops the NMI joypad read until START runs
+BJOY:   LDA V_BOOT
+        BNE BJ1
+        INC V_BOOT
+        JSR SETUP               ; the trampoline (T_EXIT) is not there yet after power-on
+        LDA #1
+        STA z:$A2
+        LDA #$10
+        STA $0484
+BJ1:    LDA $0484
+        JMP T_EXIT
+
+START:  LDA #0
+        STA z:$A2               ; (BJOY after power-on)
+        JSR SETUP
         LDX #{len(main_table_data()) - 1}
 ST1:    LDA MT_SRC,X
         STA {MAIN_RAM_TABLE},X
@@ -200,12 +216,23 @@ MM_1:   JSR SETUP
         LDA V_MSEL
         CMP #1
         BNE MM_2
-        LDA #{OVL_FIND}
+        LDA #{OVL_FIND}         ; Busca: keyboard (FIND) -> scan (SCAN) -> results (FIND)
+        JSR OVL
+        BCS MM_E
+        JSR {e(0)}              ; new query
+MM_1K:  BCC MM_R
+        LDA #{OVL_SCAN}
         JSR OVL
         BCS MM_E
         JSR {e(0)}
-        BCC MM_R
-        JSR ZPOUT               ; a search result was chosen: back to the browser
+        LDA #{OVL_FIND}
+        JSR OVL
+        BCS MM_E
+        JSR {e(1)}              ; results
+        BCS MM_1X
+        JSR {e(2)}              ; back to the keyboard, query kept
+        JMP MM_1K
+MM_1X:  JSR ZPOUT               ; a search result was chosen: back to the browser
         LDA #$FF
         JMP T_EXIT
 MM_2:   CMP #2
@@ -292,12 +319,12 @@ OV1:    LDA OVN,X
         LDA #0
         STA $2006
         LDA $2007
-        LDA #{ovl_base & 0xFF}
+        LDA #0                  ; copy exactly OVL_BASE..$7FFF (Y starts at the low byte)
         STA z:$9A
         LDA #{ovl_base >> 8}
         STA z:$9B
         LDX #{pages}
-        LDY #0
+        LDY #{ovl_base & 0xFF}
 OV2:    LDA $2007
         STA ($9A),Y
         INY
@@ -330,7 +357,7 @@ OV_END: JSR REOPEN
         LDA #$0A
         STA $2001
         RTS
-OVN_IDX: DB 0, 11, 22, 33
+OVN_IDX: DB {", ".join(str(11 * k) for k in range(len(OVL_FILES)))}
 OVN:    DB {", ".join(str(b) for b in names)}
 
 ; ---- CALLI: JSR CALLI / DB target lo, target hi, A -> OS call through the trampoline
@@ -473,7 +500,7 @@ def build_resident(ovl_base=None, build=0):
         code, lab = assemble(L, B11_DISPATCH, dict(sym, TSRC=tsrc))
         end = tsrc + len(tramp)
         if ovl_base is None:
-            base = (end + 0xFF) & ~0xFF
+            base = end           # the loader copies byte-exact: no page alignment needed
     assert lab["DISPATCH"] == B11_DISPATCH
     lab.update(sym)
     lab.update({"TSRC": tsrc, "_RES_END": end, "OVL_BASE": base})
@@ -503,22 +530,23 @@ def build_all():
     build = _build_id(lab1)
     res, lab, d2 = build_resident(base, build)
     assert lab["OVL_BASE"] == base and lab["_RES_END"] <= base
-    pages = (0x8000 - base) >> 8
-    nsect = (pages + 1) // 2
+    nsect = (0x8000 - base + 511) // 512
     mods = {
         OVL_ART: [("OVH", "DB", "data", [0x4F, OVL_ART, build & 0xFF, build >> 8]),
                   (None, "JMP", "abs", "ART_INFO"), (None, "JMP", "abs", "ART_MENU")] + art_module_listing(),
         OVL_FAV: F.asm_text(F.module_list(_header(OVL_FAV, build), 0)),
         OVL_REC: F.asm_text(F.module_list(_header(OVL_REC, build), 1)),
         OVL_FIND: F.asm_text(find_runtime.module_find(_header(OVL_FIND, build))),
+        OVL_SCAN: F.asm_text(find_runtime.module_scan(_header(OVL_SCAN, build))),
     }
     files, sizes, mlabs = {}, {}, {}
     for mid, L in mods.items():
         code, mlab = assemble(L, base, lab)
         name = OVL_FILES[mid]
         fname = name[:8].strip() + "." + name[8:]
-        assert base + len(code) <= OVL_END, \
-            f"overlay {fname} too big: ends ${base + len(code):04X} > ${OVL_END:04X}"
+        end = OVL_END if mid == OVL_ART else 0x8000    # only ART uses the SAVE3 scratch ($7FE0)
+        assert base + len(code) <= end, \
+            f"overlay {fname} too big: ends ${base + len(code):04X} > ${end:04X}"
         files[fname] = code + bytes(nsect * 512 - len(code))
         sizes[fname] = len(code)
         mlabs[fname] = mlab
