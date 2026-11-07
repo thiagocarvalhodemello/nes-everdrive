@@ -196,7 +196,11 @@ as listas/busca mostram "Falta EDFC/OVL*.BIN". Os módulos não chamam `SETUP` (
   setores com `$AAD5` para `$0500` e entradas de 32 B analisadas no módulo (nome longo = byte baixo dos
   caracteres LFN; sem LFN, os 11 caracteres "NOME    EXT" como o OS mostra), com o mesmo filtro e índice do
   `$8DA9` (sem `$E5`, `.`, oculto/rótulo; para em `$FE`). É ~10× mais rápido que `$923B`, que relê e remonta
-  cada entrada. Só `.nes`/`.fds`, primeiros 47 caracteres, sem diferenciar maiúsculas; `EDFC` e níveis abaixo
+  cada entrada. Extensão conferida no nome 8.3 da entrada (`NES`/`FDS`) antes de comparar; a comparação
+  procura a 1ª letra da consulta e só então compara o resto. **Ponteiros passados ao OS** (o cluster do
+  `$C404`, `find_runtime.W_CL` = `$024A`) têm de estar na RAM interna: o OS roda com o banco 8 mapeado.
+  Medido no emulador com 5.000 nomes do cartão real: ~4,8 milhões de instruções (~11 s de CPU) + ~1.550
+  setores. Só `.nes`/`.fds`, primeiros 47 caracteres, sem diferenciar maiúsculas; `EDFC` e níveis abaixo
   de 10 ficam de fora; até 31 resultados (nome 26 + NUL, profundidade, cluster da pasta, índice).
   Progresso ("Pastas lidas: X de Y", achados): 2 linhas (64 B) escritas direto no PPU no vblank, como a barra
   de status do OS (`$A2 = 1` durante a cópia), uma vez por pasta e por achado; cancelar (`$0484`) interrompe.

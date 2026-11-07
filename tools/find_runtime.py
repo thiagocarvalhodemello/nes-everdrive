@@ -49,6 +49,8 @@ PROG = STRBUF             # 64: the two progress rows (STRBUF + the free bytes a
 DCL = 0x0240              # 4: cluster of the folder entry just read
 QBUF = 0x0244             # 2: folder queue (OS heap, bank 8); fav_runtime.BUFP is inside PROG
 LBAT = 0x0246             # 4: sector being read
+W_CL = 0x024A             # 4: cluster walked with $C404 - it gets a POINTER, read and written with
+                          #    bank 8 mapped: it must be internal RAM, never a bank $0B variable
 SBUF = 0x0500             # 512: directory sector (internal RAM, unused by the OS)
 NMAX = 47                 # name characters compared (NAMEB holds 48)
 KEYS = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -.&"
@@ -518,6 +520,16 @@ DS_M:   LDA #0
 """ + _call(OS_MALLOC, 0, 2) + f"""
         STA {QBUF}
         STX {QBUF}+1
+        LDA {V_Q}               ; MATCH looks for the first query letter in either case
+        STA V_Q0
+        CMP #65
+        BCC DS_Q0
+        CMP #91
+        BCS DS_Q0
+        ORA #$20
+DS_Q0:  STA V_Q0L
+        LDA #0
+        STA {NAMEB + NMAX}      ; never overwritten by the parser (it writes below NMAX)
         LDA #$FF                ; the root: depth -1 + 1 = 0, total folders 1
         STA V_SP
         JSR ENQ
@@ -616,7 +628,9 @@ DS_D2:  LDA {DCL + 3}
         BNE DS_N
         JSR QFOLD
         JMP DS_N
-DS_F:   JSR HIT
+DS_F:   JSR EXTOK
+        BCC DS_N
+        JSR HIT
 DS_N:   INC V_I
         JMP DS_L
 DS_E:   LDA #0
@@ -628,7 +642,7 @@ DS_E:   LDA #0
 ; ---- SUBDIR: folder V_CL straight from its directory sectors
 SUBDIR: LDX #3
 SB0:    LDA V_CL,X
-        STA W_CL,X
+        STA {W_CL},X
         DEX
         BPL SB0
         LDA #0
@@ -638,7 +652,7 @@ SB_C:   JSR EOC                 ; C=1: end of the cluster chain
         BCC SB_C1
         RTS
 SB_C1:
-""" + _push32("W_CL") + _call(OS_CL2LBA) + f"""
+""" + _push32(W_CL) + _call(OS_CL2LBA) + f"""
         STA V_LBA
         STX V_LBA+1
         LDA z:$2A
@@ -664,10 +678,10 @@ SB_A:   LDA V_LBA,X
 """ + _call(OS_READ_SECT, 1) + f"""
         BEQ SB_R
         RTS
-SB_R:   LDA #{SBUF & 0xFF}
-        STA GETB+1
+SB_R:   LDA #{SBUF & 0xFF}      ; ($30) = current entry
+        STA z:$30
         LDA #{SBUF >> 8}
-        STA GETB+2
+        STA z:$31
 SB_E:   LDA {JOY}
         AND {BTN_CANCEL}
         BNE SB_AB
@@ -675,13 +689,13 @@ SB_E:   LDA {JOY}
         BCS SB_X
         LDA V_AB
         BNE SB_X
-        LDA GETB+1
+        LDA z:$30
         CLC
         ADC #32
-        STA GETB+1
+        STA z:$30
         BCC SB_E
-        INC GETB+2
-        LDA GETB+2
+        INC z:$31
+        LDA z:$31
         CMP #{(SBUF + 512) >> 8}
         BNE SB_E
         INC V_SN                ; (a broken chain cannot loop forever)
@@ -692,33 +706,33 @@ SB_E:   LDA {JOY}
         BCS SB_NC
         JMP SB_S
 SB_NC:
-""" + _pushptr("W_CL") + _call(OS_NEXTCL, "W_CL & 255", "W_CL >> 8") + f"""
+""" + _pushptr(W_CL) + _call(OS_NEXTCL, W_CL & 255, W_CL >> 8) + f"""
         BNE SB_X
         JMP SB_C
 SB_AB:  INC V_AB
 SB_X:   RTS
 
-; ---- EOC: C=1 when W_CL is not a data cluster (0/1, or end of chain for FAT16/FAT32)
-EOC:    LDA W_CL+3
-        ORA W_CL+2
-        ORA W_CL+1
+; ---- EOC: C=1 when {W_CL} is not a data cluster (0/1, or end of chain for FAT16/FAT32)
+EOC:    LDA {W_CL}+3
+        ORA {W_CL}+2
+        ORA {W_CL}+1
         BNE EO1
-        LDA W_CL
+        LDA {W_CL}
         CMP #2
         BCC EO_Y
-EO1:    LDA W_CL+1
+EO1:    LDA {W_CL}+1
         CMP #$FF
         BNE EO_N
-        LDA W_CL
+        LDA {W_CL}
         CMP #$F8
         BCC EO_N
         LDA {FAT_TYPE}
         CMP #1
         BEQ EO_Y                ; FAT16: $FFF8+
-        LDA W_CL+3
+        LDA {W_CL}+3
         CMP #$0F
         BCC EO_N
-        LDA W_CL+2
+        LDA {W_CL}+2
         CMP #$FF
         BNE EO_N
 EO_Y:   SEC
@@ -726,12 +740,9 @@ EO_Y:   SEC
 EO_N:   CLC
         RTS
 
-GETB:   LDA $0500,Y             ; operand = current entry (self-modified)
-        RTS
-
 ; ---- PENT: one 32-byte entry; C=1 when the folder ends here
 PENT:   LDY #0
-        JSR GETB
+        LDA ($30),Y
         BNE PE1
         SEC                     ; first byte 0: no more entries
         RTS
@@ -743,50 +754,11 @@ PE1:    STA V_B0
         CMP #$E5                ; deleted
         BEQ PE_R
         LDY #11
-        JSR GETB
+        LDA ($30),Y
         STA V_AT
         CMP #$0F
         BNE PE_S
-; ---- part of a long name: 13 characters at (order - 1) * 13
-        LDA V_B0
-        AND #$40                ; the last part comes first: clear the name
-        BEQ PL1
-        LDA #0
-        LDX #{NMAX}
-PLZ:    STA {NAMEB},X
-        DEX
-        BPL PLZ
-PL1:    LDA V_B0
-        AND #$1F
-        STA V_LV
-        SEC
-        SBC #1
-        CMP #4                  ; parts past NMAX characters are not kept
-        BCS PL_D
-        STA N_R
-        ASL
-        ADC N_R
-        ASL
-        ASL
-        ADC N_R
-        TAX
-        LDA #0
-        STA V_K2
-PL2:    LDY V_K2
-        LDA D_LFO,Y
-        TAY
-        JSR GETB
-        BEQ PL_D
-        CPX #{NMAX}
-        BCS PL_D
-        STA {NAMEB},X
-        INX
-        INC V_K2
-        LDA V_K2
-        CMP #13
-        BNE PL2
-PL_D:   CLC
-        RTS
+        JMP PL1
 ; ---- the 8.3 entry: same filter as $8DA9
 PE_S:   LDA V_B0
         CMP #46                 ; '.', '..'
@@ -798,7 +770,7 @@ PE_S:   LDA V_B0
         CMP #1
         BEQ PE_N                ; the long name is complete
         LDY #0                  ; else the 11 raw characters "NAME    EXT", as the OS shows it
-PS1:    JSR GETB
+PS1:    LDA ($30),Y
         STA {NAMEB},Y
         INY
         CPY #11
@@ -811,24 +783,154 @@ PE_N:   LDA #0
         AND #$10
         BEQ PE_F
         LDY #21                 ; folder: cluster (24 bit) -> queue
-        JSR GETB
+        LDA ($30),Y
         BNE PE_I
         LDY #20
-        JSR GETB
+        LDA ($30),Y
         STA {DCL + 2}
         LDY #26
-        JSR GETB
+        LDA ($30),Y
         STA {DCL}
         INY
-        JSR GETB
+        LDA ($30),Y
         STA {DCL + 1}
         JSR QFOLD
         JMP PE_I
-PE_F:   JSR HIT
+PE_F:   LDY #10
+        LDA ($30),Y
+        CMP #83                 ; 'S'
+        BNE PE_I
+        DEY
+        LDA ($30),Y
+        CMP #69                 ; 'E'
+        BEQ PE_H
+        CMP #68                 ; 'D'
+        BNE PE_I
+PE_H:   LDA z:$30               ; HIT moves ($30) to the cache entry
+        PHA
+        LDA z:$31
+        PHA
+        JSR HIT
+        PLA
+        STA z:$31
+        PLA
+        STA z:$30
 PE_I:   INC V_I                 ; the OS index of the next entry
         LDA V_I
         CMP #$FE                ; the OS lists no more
         RTS
+
+; ---- part of a long name: 13 characters at (order - 1) * 13
+PL1:    LDA V_B0
+        AND #$1F
+        STA V_LV
+        SEC
+        SBC #1
+        CMP #4                  ; parts past NMAX characters are not kept
+        BCS PL_D0
+        STA N_R
+        ASL
+        ADC N_R
+        ASL
+        ASL
+        ADC N_R
+        TAX
+        LDA N_R
+        CMP #3
+        BNE PL_U
+        JMP PL_SL               ; 4th part (characters 39..51): only up to NMAX
+PL_Z0:  STA {NAMEB},X           ; (branch targets within reach of the unrolled copy)
+PL_D0:  CLC
+        RTS
+PL_U:
+        LDY #1
+        LDA ($30),Y
+        BEQ PL_Z0
+        STA {NAMEB},X
+        INX
+        LDY #3
+        LDA ($30),Y
+        BEQ PL_Z0
+        STA {NAMEB},X
+        INX
+        LDY #5
+        LDA ($30),Y
+        BEQ PL_Z0
+        STA {NAMEB},X
+        INX
+        LDY #7
+        LDA ($30),Y
+        BEQ PL_Z0
+        STA {NAMEB},X
+        INX
+        LDY #9
+        LDA ($30),Y
+        BEQ PL_Z0
+        STA {NAMEB},X
+        INX
+        LDY #14
+        LDA ($30),Y
+        BEQ PL_Z0
+        STA {NAMEB},X
+        INX
+        LDY #16
+        LDA ($30),Y
+        BEQ PL_Z0
+        STA {NAMEB},X
+        INX
+        LDY #18
+        LDA ($30),Y
+        BEQ PL_Z
+        STA {NAMEB},X
+        INX
+        LDY #20
+        LDA ($30),Y
+        BEQ PL_Z
+        STA {NAMEB},X
+        INX
+        LDY #22
+        LDA ($30),Y
+        BEQ PL_Z
+        STA {NAMEB},X
+        INX
+        LDY #24
+        LDA ($30),Y
+        BEQ PL_Z
+        STA {NAMEB},X
+        INX
+        LDY #28
+        LDA ($30),Y
+        BEQ PL_Z
+        STA {NAMEB},X
+        INX
+        LDY #30
+        LDA ($30),Y
+        BEQ PL_Z
+        STA {NAMEB},X
+        INX
+        LDA V_B0                ; the last part (it comes first) ends the name
+        AND #$40
+        BEQ PL_D
+        LDA #0
+PL_Z:   STA {NAMEB},X           ; A = 0: terminator
+PL_D:   CLC
+        RTS
+PL_SL:  LDA #0
+        STA V_K2
+PL2:    LDY V_K2
+        LDA D_LFO,Y
+        TAY
+        LDA ($30),Y
+        BEQ PL_Z
+        CPX #{NMAX}
+        BCS PL_D
+        STA {NAMEB},X
+        INX
+        INC V_K2
+        LDA V_K2
+        CMP #13
+        BNE PL2
+        BEQ PL_D
 
 ; ---- QFOLD: queue folder DCL unless too deep or the queue is full
 QFOLD:  LDA V_SP
@@ -841,13 +943,12 @@ QFOLD:  LDA V_SP
         JMP ENQ
 QF_N:   RTS
 
-; ---- HIT: file NAMEB at index V_I: a match goes to the cache; V_AB = 1 when it is full
+; ---- HIT: game NAMEB at index V_I (extension already checked): a match goes to the cache;
+;      V_AB = 1 when it is full
 HIT:    LDA V_NFAV
         CMP #{MAXHITS}
         BCS HT_N
         JSR MATCH
-        BCC HT_N
-        JSR EXTOK
         BCC HT_N
         LDA V_NFAV
         JSR ENTRY
@@ -1016,9 +1117,18 @@ NU3:    DEX
         RTS
 
 ; ---- C=1 when the query is a substring of NAMEB (letters compared in upper case)
-MATCH:  LDA #0
-        STA V_MS
-MT_S:   LDX V_MS
+MATCH:  LDX #0
+MT_F:   LDA {NAMEB},X           ; look for the first query letter (either case)
+        BEQ MT_N
+        CMP V_Q0
+        BEQ MT_K
+        CMP V_Q0L
+        BEQ MT_K
+        INX
+        BNE MT_F
+MT_N:   CLC
+        RTS
+MT_K:   STX V_MS
         LDY #0
 MT_C:   LDA {V_Q},Y
         BEQ MT_Y
@@ -1035,11 +1145,10 @@ MT_U:   CMP V_QC
         INX
         INY
         BNE MT_C
-MT_X:   INC V_MS
-        JMP MT_S
+MT_X:   LDX V_MS
+        INX
+        JMP MT_F
 MT_Y:   SEC
-        RTS
-MT_N:   CLC
         RTS
 
 D_LFO:  DB {", ".join(str(o) for o in LFN_OFF)}
@@ -1052,11 +1161,12 @@ D_ACH:  DT "Encontrados:"
 D_EDFC: DT "EDFC"
 V_MS:   DS 1
 V_QC:   DS 1
+V_Q0:   DS 1
+V_Q0L:  DS 1
 V_FL:   DS 1
 V_AB:   DS 1
 V_SP:   DS 1
 V_CL:   DS 4
-W_CL:   DS 4
 V_NDL:  DS 1
 V_NDH:  DS 1
 V_NTL:  DS 1

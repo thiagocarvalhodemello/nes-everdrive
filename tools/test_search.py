@@ -16,6 +16,8 @@ Checks:
     a subfolder two levels down; cancel then walks back up to Hacks and the root
   * "ZZQ" -> "Nada encontrado."
   * nothing written to the card, OS DATA page $0300 unchanged, heap pointer restored
+  * a subfolder longer than one cluster: every entry once (the cluster walk pointer must be
+    internal RAM: $C404 runs with bank 8 mapped)
   * page 1 wiped while in the browser (a reset after a game): the main menu opens again, no crash
   * missing OVLFIND.BIN -> message, menu still works
 
@@ -191,6 +193,23 @@ def main():
         expect(bytes(emu.sd_img) == img0, "search wrote nothing to the card")
         expect(bytes(emu.ram[0x300:0x360]) + bytes(emu.ram[0x380:0x400]) == p3, "OS DATA page $0300 unchanged")
         expect(emu.ram[0x450] | emu.ram[0x451] << 8 == heap, "heap pointer restored")
+
+    with tempfile.TemporaryDirectory() as root:              # a folder longer than one cluster
+        build_sd(root)
+        os.makedirs(os.path.join(root, "Muitos"))
+        for i in range(40):                                    # 3 LFN entries + 1 each: 5+ clusters
+            open(os.path.join(root, "Muitos", f"Zork Long Name Number {i:03d} (USA).nes"), "wb").write(bytes(16))
+        emu = EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root)
+        emu.boot_to_browser()
+        open_search(emu)
+        type_text(emu, "ZORK", (0, 0))
+        emu.press_button(START, wait_frames=400)
+        from theme_runtime import B11_CACHE
+        b11 = emu.prg_ram[0x0B]
+        names = [bytes(b11[B11_CACHE - 0x6000 + 32 * k: B11_CACHE - 0x6000 + 32 * k + 26]).split(bytes(1))[0]
+                 for k in range(31)]
+        nums = sorted(int(n[22:25]) for n in names if n.startswith(b"Zork"))
+        expect(nums == list(range(31)), f"multi-cluster folder: 31 distinct hits 000..030 ({nums[:3]}..{nums[-3:]})")
 
     with tempfile.TemporaryDirectory() as root:              # reset after a game
         build_sd(root)
