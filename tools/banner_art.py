@@ -3,12 +3,15 @@ Themes: colours (one explicit 16-colour PPU palette per theme) and banners
 (256x16 px, screen rows 0-1) generated from code.
 
 Palette roles (what the OS draws with each entry):
-  0  bd        universal backdrop (banner background, empty cells)
+  0  = bg      universal backdrop: the NES also paints the TV border with it, so it is the
+               list background (v1.8.2; before, "bd" left a dark stripe at the screen edges)
+  bd           banner band colour: colour 1 of palettes 1/2 (_band_remap drops the banner colour
+               that costs least), also rows 0 and 3 (solid tile BLANK_SLOT)
   1  file      file names in the list (palette 0, normal font)
   2  bg        LIST BACKGROUND (palette 0 colour 2 fills the list area)
   3  folder    folders, cursor and the selected entry (highlighted font)
-  5-7          banner colours: dark, mid, bright (attribute palette 1)
-  9-11         banner corner icons (attribute palette 2, x < 32 and x >= 224)
+  5-7          bd + 2 of the banner colours (attribute palette 1)
+  9-11         bd + 2 of the icon colours (attribute palette 2, x < 32 and x >= 224)
   13 popup_txt popups and status bar text (palette 3)
   14 popup_bg  popups and status bar background
   15 popup_hl  highlighted popup item
@@ -48,11 +51,14 @@ MIN_CONTRAST = 40          # L*: list text / folders vs list background, popup t
 MIN_HL_CONTRAST = 20       # L*: highlighted popup item vs popup background
 
 
-def palette16(c):
-    """The 16 bytes the theme loader copies to the OS palette ($827C) and the PPU."""
-    return bytes([c["bd"], c["file"], c["bg"], c["folder"],
-                  0x0F, *c["banner"],
-                  0x0F, *c["icon"],
+def palette16(c, band=None, icon=None):
+    """The 16 bytes the theme loader copies to the OS palette ($827C) and the PPU. Entry 0 (also the
+    TV border) is the list background; band/icon come from _band_remap (package() passes them)."""
+    if band is None:
+        raise ValueError("use package(theme)['palette']")
+    return bytes([c["bg"], c["file"], c["bg"], c["folder"],
+                  0x0F, *band,
+                  0x0F, *icon,
                   0x0F, *c["popup"]])
 
 
@@ -292,9 +298,38 @@ def _tile(px, cx, cy):
     return bytes(lo + hi)
 
 
+def _band_remap(theme_id, px):
+    """The universal backdrop (palette entry 0) is also the colour of the TV border around the
+    picture, so it has to be the list background. The banner band keeps its colour (old "bd") as
+    colour 1 of the banner/icon palettes; each region gives up the one banner colour that costs
+    least to lose (pixels using it x L* distance to the band). Returns (pixels, banner3, icon3).
+    Themes whose band already is the list background keep the classic layout."""
+    _, _, _, c = THEMES[theme_id]
+    if c["bd"] == c["bg"]:
+        return px, tuple(c["banner"]), tuple(c["icon"])
+    out = [row[:] for row in px]
+    pals = []
+    # without corner icons the corners use the banner colours: one choice for the whole banner
+    regions = (("mid", c["banner"]), ("corner", c["icon"])) if theme_id in ICONS else (("all", c["banner"]),)
+    for region, cols in regions:
+        xs = [x for x in range(W) if region == "all" or (x < 32 or x >= W - 32) == (region == "corner")]
+        cnt = {k: sum(1 for row in px for x in xs if row[x] == k) for k in (1, 2, 3)}
+        cost = {k: cnt[k] * abs(_lstar(cols[k - 1]) - _lstar(c["bd"])) for k in (1, 2, 3)}
+        drop = min((1, 2, 3), key=lambda k: (cost[k], k))
+        keep = [k for k in (1, 2, 3) if k != drop]
+        remap = {0: 1, drop: 1, keep[0]: 2, keep[1]: 3}
+        for row_o, row_i in zip(out, px):
+            for x in xs:
+                row_o[x] = remap[row_i[x]]
+        pals.append((c["bd"], cols[keep[0] - 1], cols[keep[1] - 1]))
+    return out, pals[0], pals[-1]
+
+
 def package(theme_id):
-    px = draw(theme_id)
-    blank = bytes(16)
+    px, band, icon = _band_remap(theme_id, draw(theme_id))
+    _, _, _, c0 = THEMES[theme_id]
+    solid = c0["bd"] != c0["bg"]
+    blank = bytes([0xFF] * 8 + [0] * 8) if solid else bytes(16)   # band tile: colour 1 / backdrop
     slots, tiles, nt = {}, [], bytearray(96)
     free = iter(FREE_SLOTS)
     for cy in range(2):
@@ -308,10 +343,10 @@ def package(theme_id):
                 tiles.append((slots[t], t))
             nt[cy * 32 + cx] = slots[t]
     nt[64:96] = bytes([BLANK_SLOT] * 32)
-    tiles.append((BLANK_SLOT, blank))
+    tiles.append((BLANK_SLOT, blank))                # also rows 0 and 3 (theme_runtime.BLACK_TILE)
     assert len(tiles) - 1 <= MAX_TILES, f"theme {theme_id}: {len(tiles) - 1} tiles > {MAX_TILES}"
     _, name, _, colours = THEMES[theme_id]
-    pal = palette16(colours)
+    pal = palette16(colours, band, icon)
     return {"name": name, "tiles": tiles, "nametable": bytes(nt), "palette": pal, "pal0": tuple(pal[:4]),
             "pixels": px}
 

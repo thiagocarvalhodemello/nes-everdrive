@@ -228,8 +228,11 @@ malloc do OS (recusa se `$0450` ≥ `$7C00`), liberado antes de voltar ao OS ou 
   `*$046A` (e o residente grava em Recentes + `$B7AC`); SELECT zera o cluster do slot; cancelar volta ao menu.
 
 ### CHR e tela
-Slots livres da fonte para tiles de banner: `$0B–$1E` e `$8B–$9F`; `$1F` = tile vazio (cor de fundo
-universal: linhas 0 e 3). Atributos `$63C0–$63C7 = $55`: linhas 0–3 usam a paleta 1 (= cores do tema:
+Slots livres da fonte para tiles de banner: `$0B–$1E` e `$8B–$9F`; `$1F` = tile sólido da cor 1 (a cor
+da faixa do banner; linhas 0 e 3 e células vazias do banner). A cor universal (`$3F00`) é o **fundo da
+lista**, porque o NES também pinta a borda da TV com ela (antes ficava uma faixa escura nas laterais);
+`banner_art._band_remap` move a cor da faixa para a cor 1 das paletas 1/2 abrindo mão da cor do banner
+que menos aparece. Atributos `$63C0–$63C7 = $55`: linhas 0–3 usam a paleta 1 (= cores do tema:
 sh, txt, hl); o banner fica nas linhas 1–2 porque a linha 0 some sob a borda de muitas TVs.
 
 ## 7. Emulador (`tools/edfc_emu.py`) — limitações

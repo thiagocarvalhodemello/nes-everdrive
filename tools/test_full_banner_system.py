@@ -2,7 +2,7 @@ import os, sys, struct, zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from edfc_emu import EverDriveN8Emu, save_png, NES_PALETTE
-from banner_art import build_banner_packages, THEMES, palette16
+from banner_art import build_banner_packages, THEMES
 from theme_runtime import B11_LOADER, B11_PAL_TABLE, B11_VARS, B11_VARS2, B11_DATA2, NT_BYTES
 from resident_runtime import install_into_bank11
 
@@ -105,7 +105,7 @@ def build_bank11_image(packages):
     pal_table_offset = PAL_TABLE - 0x6000
     pal_table_cpu = PAL_TABLE
     for i, (_, _, _, colours) in enumerate(THEMES):
-        b11[pal_table_offset + i*16 : pal_table_offset + i*16 + 16] = palette16(colours)
+        b11[pal_table_offset + i*16 : pal_table_offset + i*16 + 16] = packages[i]['palette']
     assert PAL_TABLE + 16 * len(THEMES) <= LOADER, "palette table overlaps the loader"
 
 
