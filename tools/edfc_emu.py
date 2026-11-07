@@ -795,7 +795,6 @@ class EverDriveN8Emu:
     def press_button(self, btn_mask, hold_frames=1, wait_frames=15):
         self.run_frames(hold_frames, joy=btn_mask)
         self.ram[0x0484] = 0
-        self.ram[0x051D] = 0
         self.run_frames(wait_frames, joy=0)
 
     def render_screen(self, out_path, scale=2):

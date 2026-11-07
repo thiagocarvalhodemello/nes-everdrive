@@ -34,10 +34,10 @@ from art_runtime import T_LIMIT
 UP, DOWN, SELECT, START, B, A = 0x08, 0x04, 0x20, 0x10, 0x40, 0x80
 
 
-def make_rom(seed):
+def make_rom(seed, battery=False):
     import random
     r = random.Random(seed)
-    return b"NES\x1a\x02\x01\x00\x00" + bytes(8) + bytes(r.randrange(256) for _ in range(32768 + 8192))
+    return b"NES\x1a\x02\x01" + (b"\x12" if battery else b"\x00") + b"\x00" + bytes(8) + bytes(r.randrange(256) for _ in range(32768 + 8192))
 
 
 def prefilled_favs(n):
@@ -320,6 +320,88 @@ def main():
                "Recentes screen: Alpha Quest (most recent) above Beta Racer")
         emu.press_button(A, wait_frames=60)
         expect("Menu Principal" in screen(emu), "cancel -> back to the main menu")
+
+    # --- saves: a favourite / recent game starts through the OS $BF16 like the browser does
+    #     (previous game's SRAM -> its EDFC/SAVE file, this game's save -> SRAM). v1.8.3 and
+    #     earlier went straight to $B7AC: the save was never loaded, and the next launch from
+    #     the browser backed the empty SRAM up over it (the save "vanished")
+    with tempfile.TemporaryDirectory() as root:
+        build_sd(root)
+        for name, seed in (("Alpha Quest (World).nes", 1), ("Beta Racer (World).nes", 2)):
+            open(os.path.join(root, name), "wb").write(make_rom(seed, battery=True))
+            open(os.path.join(root, "EDFC", "SAVE", name), "wb").write(bytes([0x5A + seed]) * 8192)
+        SRAM = 0                                                 # cartridge SRAM = PRG-RAM bank 0
+
+        def reset(prev):
+            """console reset: cartridge RAM (all banks but the OS image) and the card survive"""
+            emu = EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root)
+            if prev is not None:
+                emu.sd_img[:] = prev.sd_img
+                for b in list(range(0, 9)) + list(range(16, 64)):
+                    emu.prg_ram[b][:] = prev.prg_ram[b]
+            emu.boot_to_browser()
+            return emu
+
+        def start(emu):
+            got, step = [], emu.step
+
+            def stop():
+                if emu.PC == 0xB7AC:
+                    p = emu.ram[0x46A] | emu.ram[0x46B] << 8
+                    got.append(bytes(emu.read(p + 10 + i) for i in range(11)))
+                    raise StopIteration
+                step()
+            emu.step = stop
+            try:
+                emu.press_button(B, wait_frames=600)
+            except StopIteration:
+                pass
+            emu.step = step
+            return got[0] if got else None
+
+        def saved(emu, byte):
+            img = bytes(emu.sd_img)
+            return sum(img[o:o + 512] == bytes([byte]) * 512 for o in range(0, len(img), 512))
+
+        def fill(emu, byte):
+            emu.prg_ram[SRAM][:] = bytes([byte]) * 8192
+
+        emu = reset(None)
+        select_file(emu, "Alpha Quest")
+        emu.press_button(B, wait_frames=60)
+        emu.press_button(DOWN, wait_frames=15)
+        emu.press_button(DOWN, wait_frames=15)
+        emu.press_button(B, wait_frames=120)                     # Favoritar
+        emu.press_button(A, wait_frames=30)
+        select_file(emu, "Beta Racer")
+        emu.press_button(B, wait_frames=60)
+        got = start(emu)
+        expect(got == b"Beta Racer " and emu.prg_ram[SRAM][:16] == bytes([0x5C]) * 16,
+               f"browser: Beta Racer starts with its save in SRAM ({got})")
+        fill(emu, 0xD4)                                          # the game saves progress
+        emu = reset(emu)
+        emu.press_button(START, wait_frames=60)
+        for _ in range(2):
+            emu.press_button(DOWN, wait_frames=15)
+        emu.press_button(B, wait_frames=200)
+        for _ in range(5):
+            emu.press_button(DOWN, wait_frames=30)
+        expect(any(r.startswith("Alpha Quest") for r in highlighted_rows(emu)), "cursor on the Alpha Quest favourite")
+        got = start(emu)
+        expect(got == b"Alpha Quest" and emu.prg_ram[SRAM][:16] == bytes([0x5B]) * 16,
+               f"favourite: Alpha Quest starts with ITS save in SRAM ({got})")
+        expect(saved(emu, 0xD4) == 16, "favourite: the previous game's progress went to its save file first")
+        expect((emu.read(0xBFDB), emu.read(0xBFDC)) == (0x71, 0xBC), "$BF16's JSR $BC71 restored after the launch")
+        fill(emu, 0xE5)
+        emu = reset(emu)
+        emu.press_button(START, wait_frames=60)
+        for _ in range(3):
+            emu.press_button(DOWN, wait_frames=15)
+        emu.press_button(B, wait_frames=200)
+        emu.press_button(DOWN, wait_frames=30)                   # Alpha (most recent), Beta
+        got = start(emu)
+        expect(got == b"Beta Racer " and emu.prg_ram[SRAM][:16] == bytes([0xD4]) * 16 and saved(emu, 0xE5) == 16,
+               f"recent: Beta Racer gets its saved progress, Alpha's progress was saved first ({got})")
 
     print(f"\n{'PASSED' if failures == 0 else f'FAILED ({failures})'}")
     return failures

@@ -61,7 +61,7 @@ leitura-modifica-escrita no `$4401` — uma interrupção que mude o índice no 
 | `$0200–$02FF` | zerada no reset e nunca lida pelo OS → **livre** (capas: registro do arquivo + tabela OAM; listas: `$0200` linha de texto, `$0220–$024B` clusters, buffer, nome, contador; busca: `$0200–$023F` linhas do progresso, `$0240` cluster lido, `$0244` fila de pastas, `$0250–$027F` nome comparado; **`$0280–$02BF` tabela do Menu Principal** enquanto ele está aberto — ver `fav_runtime.py`/`find_runtime.py`) |
 | `$0300–$03FF` | **DATA do OS (cc65)**: tabelas de menu (`$03B3`, `$03B9`, `$03C1`, `$03C9`, `$03D5`), variáveis (`$0350–$037F`), rotina copiada (`$03E0+`). **Proibido escrever.** Imagem de origem no banco 15 a partir de `$F9DA` |
 | `$0400–$04DA` | BSS do OS (ponteiros globais, `$0464`/`$0466` = flags/ordem da lista, `$04B8` = nº de entradas, `$0484` = joypad, `$0486`/`$0487` = máscaras confirmar/cancelar, `$04D4` = redesenhar tela, `$046E` = cluster da pasta `/EDFC`) |
-| `$0500–$06FF` | nunca usada pelo OS (a pilha C não desce de ~`$07A7`; na busca, `$07B1` medido) → **buffer de setor de diretório da busca** (`find_runtime.SBUF`) |
+| `$0500–$06FF` | nunca usada pelo OS (a pilha C não desce de ~`$07A7`; na busca, `$07B1` medido) → **buffer de setor de diretório da busca** (`find_runtime.SBUF`); ao iniciar um favorito/recente: registro do jogo em `$0500–$060E` e o gancho do `$BC71` em `$0610` (`fav_runtime.RECB`/`HOOK`) |
 | `$0700–$07FF` | pilha C (cresce para baixo a partir de `$0800`) |
 
 ## 4. API do OS usada pelos patches
@@ -86,7 +86,7 @@ argumento** (exatamente como o OS faz); quem é chamado desempilha. Helpers: `$F
 | `$C404` | (&cluster32) → próximo cluster no lugar; A = 0 se ok |
 | `$AAD5` | (lba32, dst16, n8) lê setores; A = 0 se ok |
 | `$AB0A` | (src16, n8, lba32) **grava** setores (invalida o cache de setor do OS); A = 0 se ok |
-| `$BF16` | (índice8, `*$046A`) monta o registro "jogo atual" (271 B: cluster, …, LFN em +10, `$55AA` em +`$10B`); não grava no SD |
+| `$BF16` | (índice8, `*$046A`) **seleciona o jogo**: se o jogo anterior (registro ainda em `*$046A`) tem bateria, grava a SRAM (banco 0) no arquivo dele em `EDFC/SAVE/<nome da ROM>` (`$A12A`); monta o registro novo com `$BC71` (em `$BFDA`; 271 B: cluster, …, LFN em +10, `$55AA` em +`$10B`) e carrega o save do jogo novo na SRAM (`$A245`). Todo início de jogo tem que passar por aqui, senão o save não é carregado |
 | `$B7AC` | inicia o jogo descrito pelo registro em `*$046A` (era o "repetir último jogo") |
 | `$CBC0` | despacha o menu de arquivo pela extensão → `$D556` (.NES/.FDS), `$D782` (.SAV), `$D83F` (.TXT) |
 | `$D556` | menu do jogo (resultado 0 = carregar → `$BF16` + `$B7AC`; 2 = Info da ROM `$CD1F`) |
@@ -228,8 +228,14 @@ malloc do OS (recusa se `$0450` ≥ `$7C00`), liberado antes de voltar ao OS ou 
   (dá a volta em `$04B8`), pula pastas (`*$0464`[índice] bit 7) e nomes que não terminam em `ES`/`DS`, grava o
   novo índice em `(sp),0` (o `$D556` usa esse valor para carregar/Info/Favoritar), chama `$C7E2(0)`, empilha de
   novo os argumentos do menu (`$03C1`, 3, 0) e reabre capa + menu.
-- **Favoritos** (Menu Principal): lista em ordem de slot; cima/baixo, confirmar copia o registro para
-  `*$046A` (e o residente grava em Recentes + `$B7AC`); SELECT zera o cluster do slot; cancelar volta ao menu.
+- **Favoritos** (Menu Principal): lista em ordem de slot; cima/baixo, confirmar inicia o jogo (o residente grava
+  em Recentes + `$B7AC`); SELECT zera o cluster do slot; cancelar volta ao menu.
+- **Iniciar um favorito/recente** (`SELREC`): o registro do slot vai para `$0500` e o jogo é selecionado pelo
+  próprio `$BF16` (save do jogo anterior gravado, save deste carregado), como no navegador. Só a chamada
+  `JSR $BC71` em `$BFDA` (registro pelo índice da pasta aberta, que aqui não existe) é apontada, em tempo de
+  execução e só para essa chamada, para um gancho em `$0610` que copia `$0500` para o registro, desempilha os
+  3 bytes de argumento e devolve 0; o gancho e o `SELREC` restauram `$BC71` (v1.8.3 e antes chamavam `$B7AC`
+  direto: o save não carregava).
 
 ### CHR e tela
 Slots livres da fonte para tiles de banner: `$0B–$1E` e `$8B–$9F`; `$1F` = tile sólido da cor 1 (a cor

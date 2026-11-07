@@ -45,7 +45,8 @@ Leia antes de mexer:
    hardware — descreva isso honestamente ao usuário.
 9. **O console só grava no SD dentro do `EDFC/FAVS.DAT` e do `EDFC/RECENTS.DAT`**, que já existem com
    tamanho fixo (sem mexer em FAT/diretório) e só depois de ler o setor e conferir slot + assinatura.
-   Não crie outro caminho de escrita sem a mesma proteção.
+   Não crie outro caminho de escrita sem a mesma proteção. (A exceção é do próprio OS: o `$BF16` grava a SRAM
+   do jogo anterior em `EDFC/SAVE/`; todo início de jogo passa por ele, inclusive favoritos/recentes.)
 10. **`EDFC/OVL*.BIN` e `EDFC/OS.BIN` andam juntos**: os módulos levam o build id do residente e são
    recusados se não baterem. Sempre gere os dois com `install_banner_theme.py` e commite/empacote juntos.
 

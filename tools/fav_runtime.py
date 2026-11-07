@@ -38,7 +38,11 @@ OS_NEXTCL = 0xC404        # (&cluster32) -> 0 ok, cluster updated in place
 OS_READ_SECT = 0xAAD5     # (lba32, dst16, n8) -> 0 ok
 OS_WRITE_SECT = 0xAB0A    # (src16, n8, lba32) -> 0 ok
 OS_FIND_FILE = 0x9DC7     # (dir32, name11*, 0, out32*)
-OS_GAME_REC = 0xBF16      # (index8, recptr16) -> 0 ok; builds the "current game" record
+OS_GAME_REC = 0xBF16      # (index8, recptr16) -> 0 ok; backs up the previous game's SRAM to
+                          # EDFC/SAVE/<rom name>, builds the record ($BC71) and loads the new save
+OS_REC_BY_INDEX = 0xBC71  # (index8, recptr16): record of the browser entry index
+SITE_BC71 = 0xBFDA        # $BF16's JSR $BC71 (bank 13, plain): pointed at HOOK for one call
+REC_LEN = 271
 OS_START_GAME = 0xB7AC    # starts the game described by the record at *$046A
 OS_TXT_BEGIN = 0xA854     # clear screen (banner hook runs), cursor x=2 y=1
 OS_TXT_LINE = 0xA864      # (str16) print + next line
@@ -63,6 +67,9 @@ RECCL = 0x023C            # 4: cluster of the game being added
 TMPT = 0x0240             # 9: sector tail read back
 TMPS = 0x0249             # 3: play counter
 NAMEB = 0x0250            # 32: search (find_runtime): name being compared
+# internal RAM $0500-$06FF (free; the search's sector buffer while it scans)
+RECB = 0x0500             # 271: record of the favourite / recent game being started
+HOOK = 0x0610             # SELREC's stand-in for $BC71 (copied here before each use)
 
 
 # ---------------------------------------------------------------------------
@@ -449,22 +456,32 @@ FS_GO:  JSR SLOTK
         LDA #0
         TAX
         JSR BUF_SRC
-        LDA #0
-        TAX
-        JSR REC_DST
+        LDA #{RECB & 0xFF}
+        STA z:$9C
+        LDA #{RECB >> 8}
+        STA z:$9D
         LDA #0
         STA CNT
         JSR T_COPY
         LDA #0
         LDX #1
         JSR BUF_SRC
-        LDA #0
-        LDX #1
-        JSR REC_DST
-        LDA #15
+        LDA #{(RECB + 256) & 0xFF}
+        STA z:$9C
+        LDA #{(RECB + 256) >> 8}
+        STA z:$9D
+        LDA #{REC_LEN - 256}
         STA CNT
         JSR T_COPY
         JSR F_CLOSE
+        JSR SELREC
+        BCC FS_SEL
+        LDA #D_LOADERR & 0xFF
+        LDX #D_LOADERR >> 8
+        JSR SHOWMSG
+        CLC
+        RTS
+FS_SEL:
 """ + ("""        SEC                     ; favourite chosen: the resident code starts it
         RTS
 """ if fav else """        JSR RECADD
@@ -878,6 +895,62 @@ SC_N:   INC V_K
 SC_E:   CLC
         RTS
 
+; ---- SELREC: select the game in RECB the way the browser does: the OS $BF16 (index, *$046A)
+;      saves the previous game's SRAM to its EDFC/SAVE file, builds the record and loads this
+;      game's save into SRAM. Only its "record from the directory index" call ($BFDA JSR $BC71)
+;      is pointed at HOOK for this one call (HOOK copies RECB instead). C=1 when $BF16 failed
+SELREC: LDX #HK_X-HK_S
+SR_C:   LDA HK_S,X
+        STA {HOOK},X
+        DEX
+        BPL SR_C
+        LDA #{HOOK & 0xFF}
+        STA {SITE_BC71 + 1}
+        LDA #{HOOK >> 8}
+        STA {SITE_BC71 + 2}
+        LDA #0
+        JSR {PUSHA}
+        LDA {REC_PTR}
+        LDX {REC_PTR}+1
+        JSR {PUSHAX}
+        JSR ZPOUT
+""" + _call(OS_GAME_REC) + f"""
+        PHA
+        JSR HK_R                ; $BF16 may fail before the hooked call
+        PLA
+        CMP #1                  ; C=1 when A != 0
+        RTS
+; ---- HOOK (copied to internal RAM, position independent): (index8, rec16) -> rec = RECB, A=X=0
+HK_S:   LDY #1
+        LDA ($28),Y
+        STA z:$31
+        DEY
+        LDA ($28),Y
+        STA z:$30
+HK_1:   LDA {RECB},Y
+        STA ($30),Y
+        INY
+        BNE HK_1
+        INC z:$31
+HK_2:   LDA {RECB + 256},Y
+        STA ($30),Y
+        INY
+        CPY #{REC_LEN - 256}
+        BNE HK_2
+        LDA z:$28                ; drop the 3 argument bytes, as $BC71 does
+        CLC
+        ADC #3
+        STA z:$28
+        BCC HK_R
+        INC z:$29
+HK_R:   LDA #{OS_REC_BY_INDEX & 0xFF}
+        STA {SITE_BC71 + 1}
+        LDA #{OS_REC_BY_INDEX >> 8}
+        STA {SITE_BC71 + 2}
+        LDA #0
+        TAX
+HK_X:   RTS
+
 ; ---- strings
 D_MAGIC: DB {", ".join(str(b) for b in FAV_MAGIC)}
 D_EMPTY: DB 0
@@ -891,6 +964,7 @@ D_DUP:  DT "J\\x01 est\\x01 nos favoritos."
 D_FULL: DT "Lista cheia (32 jogos)."
 D_NOFILE: DT "Falta o EDFC/FAVS.DAT"
 D_IO:   DT "Erro no EDFC/FAVS.DAT"
+D_LOADERR: DT "Erro ao carregar o jogo"
 """ if fav else """D_FNAME: DT "RECENTS DAT"
 D_TITLE: DT "Recentes"
 D_NONE: DT "Nenhum jogo recente."
@@ -898,6 +972,7 @@ D_NONE2: DT "Os jogos iniciados ficam aqui"
 D_HINT: DT "SELECT - remover da lista"
 D_NOFILE: DT "Falta o EDFC/RECENTS.DAT"
 D_IO:   DT "Erro no EDFC/RECENTS.DAT"
+D_LOADERR: DT "Erro ao carregar o jogo"
 V_SW:   DS 1
 V_MINK: DS 1
 V_MAXS: DS 3
