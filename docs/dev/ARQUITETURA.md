@@ -109,7 +109,9 @@ argumento** (exatamente como o OS faz); quem é chamado desempilha. Helpers: `$F
 | `$83F9` | fim da limpeza de tela | `JMP BANNER` — banner nas linhas 1–2, linhas 0 (fica sob a borda da TV) e 3 pretas |
 | `$A56B`, `$A5A9` | `LDA #$40` (base `$6040` = linha 2 das rotinas de posição de texto `$A565`/`$A595`) | `#$60`: tudo que o OS escreve desce uma linha (lista nas linhas 4–24, telas de texto 4–27, menus) |
 | `$83F6` (banco 12) | `LDA #$40` (ponteiro de texto após limpar) | `#$60` |
-| `$840C`, `$8418` (banco 12) | upload parcial do cursor: coluna 1 das linhas 0–23 (`$6001`/PPU `$2001`) | linhas 1–24 (`$6021`/`$2021`) |
+| `$840C`, `$8418` (banco 12) | upload parcial do cursor: coluna 1 das linhas 0–23 (`$6001`/PPU `$2001`) | coluna 0 das linhas 1–24 (`$6020`/`$2020`) |
+| `$C95B` | linha do navegador: `$A660(">"/" ", x, y)` com x = variável local (= 1, a mesma do x da barra de status) | `LDA #0; JSR pusha; NOP NOP`: setinha na coluna 0 e nome na coluna 1 (a TV mostra a coluna 0; antes sobrava uma coluna vazia antes da setinha) |
+| `$C995` | largura do nome na lista `$1D` (29) | `$1E` (30: colunas 1–30, como a barra) |
 | `$ABBD` | `JSR $EF47` | `JSR IDLE` — aplica o tema pedido no boot |
 | `$D91E` | `LDA $0484` (laço ocioso do navegador) | `JSR H_JOY` → `BJOY` (residente): na 1ª vez após ligar "aperta START" (`$0484 = $10`, `$A2 = 1` para a NMI não sobrescrever até o `START`) → Menu Principal; depois só devolve `$0484` |
 | `$ECF1`, `$ECF8`, `$ECFF`, `$ED06`, `$ED23` | mensagens da tela de erro do OS (a tradução as tinha posto em `$FAEB…`, hoje nosso código: saíam como lixo) | `$FAE4` (string vazia): a tela mostra só o código, como o OS de fábrica |

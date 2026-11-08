@@ -219,8 +219,12 @@ BAR_LINE = 0x19                # list row of the first name line (+3 = screen ro
 SITE_TXT_BASE = (0xA56B, 0xA5A9)   # LDA #$40 (low byte of $6040) in $A565 and $A595 -> #$60
 SITE_TXT_PTR0 = 0x83F6         # clear screen: LDA #$40 / STA $92 (print pointer row 2) -> #$60
 # cursor-column partial upload ($8403): column 1 of rows 0-23 -> rows 1-24 (PPU $2021 / shadow $6021)
-SITE_CUR_SRC = 0x840C          # LDA #$01 / STA $9A -> #$21
-SITE_CUR_PPU = 0x8418          # LDA #$01 / STA $2006 -> #$21
+SITE_CUR_SRC = 0x840C          # LDA #$01 / STA $9A -> #$20 (column 0 of rows 1-24)
+SITE_CUR_PPU = 0x8418          # LDA #$01 / STA $2006 -> #$20
+SITE_CUR_X = 0xC95B            # browser row: $A660(">"/" ", x, y) took x from a frame local (= 1, also the
+                               # status bar's x): LDY #8 / LDA (sp),Y / JSR pusha -> LDA #0 / JSR pusha / NOP NOP
+                               # -> cursor in column 0, name in column 1 (the bar keeps column 1)
+SITE_NAME_W = 0xC995           # browser row name width: LDA #$1D (29) -> #$1E (30, columns 1-30, as the bar)
 
 # "Sobre" screen ($D1C4): 14 lines, each "LDA #<str / LDX #>str / JSR pushax / JSR println".
 # The string block $F7B9-$F899 (bank 15) is rewritten and the 14 pointers repointed.
@@ -494,8 +498,10 @@ def os_patches(labels, orig_data):
         **{a: bytes([BAR_LINE + (i & 1)]) for i, a in enumerate(SITE_BAR_ROWS)},
         **{a: bytes([0x60]) for a in SITE_TXT_BASE},
         SITE_TXT_PTR0: bytes([0x60]),
-        SITE_CUR_SRC: bytes([0x21]),
-        SITE_CUR_PPU: bytes([0x21]),
+        SITE_CUR_SRC: bytes([0x20]),
+        SITE_CUR_PPU: bytes([0x20]),
+        SITE_CUR_X: bytes.fromhex("a90020b2f3eaea"),
+        SITE_NAME_W: bytes([0x1E]),
         **about_patches(),
     }
 
