@@ -95,7 +95,7 @@ argumento** (exatamente como o OS faz); quem é chamado desempilha. Helpers: `$F
 | `$9541` | lê setores de um arquivo a partir do cluster; **destino < `$2000` vai para o PPU** |
 | `$95C4` | continua lendo o arquivo aberto (o emulador não simula a continuação — leia tudo numa chamada) |
 | `$AD3B` | acha subpasta — compara **exatamente 4 caracteres** (por isso `ARTS`, `EDFC`, `SAVE`, `MAPS`) |
-| `$9DC7` | acha arquivo pelo nome 8.3 de 11 caracteres (`"XXXXXXXXBIN"`) |
+| `$9DC7` | acha arquivo pelo nome (abre a pasta com `$8DA9` e compara entrada por entrada): **só enxerga as ~253 primeiras entradas** (índice de 8 bits). Para pastas grandes (`EDFC/ARTS`) use leitura própria dos setores (`art_runtime.AFIND`) |
 | `$8DA9` | (cluster32; 0 = raiz) abre diretório: monta as tabelas por entrada (`*$0460/$0462/$0464`), a quantidade `$04B8` (< `$FE`), a pasta pai `$04BB` e `$04BA` (raiz). Ignora `.`/`..`/apagados. Depois de usar, **reabra `$8278`** (pasta do navegador) |
 | `$923B` | (índice16, nome16*, cluster32* ou 0, 0) lê a entrada: nome longo em `*$0468` (banco 8), primeiro cluster no ponteiro; 0 = ok. Não lê o arquivo (o `$BC71` lê) |
 | `$C67D` | depois do `$8DA9`: monta a tabela de ordem de exibição `*$0466` |

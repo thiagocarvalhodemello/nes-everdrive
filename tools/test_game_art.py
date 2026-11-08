@@ -55,6 +55,11 @@ def build_sd(root, art_rom, plain_rom, art):
     open(os.path.join(root, "Test Game With Art (World).nes"), "wb").write(art_rom)
     open(os.path.join(root, "ZZ No Art (World).nes"), "wb").write(plain_rom)
     open(os.path.join(root, "EDFC", "ARTS", nes_art.art_filename(art_rom)), "wb").write(art)
+    # 400 other covers listed before it: the OS file lookup ($9DC7) only sees ~253 entries per
+    # folder, so up to v1.8.4 most covers of a full pack were never found (several clusters too)
+    assert nes_art.art_filename(art_rom) > "0000FFFF.BIN"
+    for k in range(400):
+        open(os.path.join(root, "EDFC", "ARTS", f"0000{k:04X}.BIN"), "wb").write(bytes(64))
 
 
 class Watch:

@@ -269,8 +269,9 @@ def art_module_listing():
     L += _pushptr("ARTSTR") + _pushptr("DIR32")
     L += _call(OS_FIND_DIR, "DIR32 & 0xFF", "DIR32 >> 8") + [*_jne("FAIL_N")]
     L += _nonzero32("DIR32", "FAIL_N")
-    L += _push32("DIR32") + _pushptr("NAME11") + [(None, "JSR", "abs", PUSH0)] + _pushptr("FILE32")
-    L += _call(OS_FIND_FILE, "FILE32 & 0xFF", "FILE32 >> 8") + [*_jne("FAIL_N")]
+    # the OS file lookup ($9DC7) only sees the first ~253 entries of a folder (8-bit index):
+    # EDFC/ARTS holds thousands of covers, so the module reads the folder itself (AFIND)
+    L += [(None, "JSR", "abs", "AFIND"), *_jne("FAIL_N")]
     L += _nonzero32("FILE32", "FAIL_N")
     # 7. art file -> CHR $1000-$17FF
     L += _push32("FILE32") + [(None, "LDA", "imm", 0x00), (None, "LDX", "imm", 0x10), (None, "JSR", "abs", PUSHAX),
@@ -330,4 +331,136 @@ def art_module_listing():
           ("HEX1", "CMP", "imm", 10), (None, "BCC", "rel", "HD"), (None, "ADC", "imm", 6),
           ("HD", "ADC", "imm", 0x30), (None, "STA", "abx", "NAME11"), (None, "INX", "imp", None),
           (None, "RTS", "imp", None)]
-    return L
+    return L + _afind_listing()
+
+
+ART_SBUF = 0x0500          # internal RAM, free (also the search's sector buffer)
+FAT_TYPE = 0x04A6          # 1 = FAT16 (else FAT32)
+SPC = 0x04A7               # sectors per cluster
+OS_CL2LBA = 0x969A         # (cluster32) -> lba32
+OS_NEXTCL = 0xC404         # (&cluster32) -> 0 ok, cluster updated in place (pointer: internal RAM)
+OS_READ_SECT = 0xAAD5      # (lba32, dst16, n8) -> 0 ok
+
+
+def _afind_listing():
+    """AFIND: find NAME11 ("XXXXXXXXBIN") in folder DIR32 by reading its directory sectors.
+    A = 0 and FILE32 = first cluster when found, else A = 1. DIR32 (page 1) is walked in place."""
+    import fav_runtime as F
+    return F.asm_text(f"""
+AFIND:  LDA #0
+        STA A_N
+        STA A_N+1
+AF_C:   LDA DIR32+3             ; end of the chain (0/1, FAT16 $FFF8+, FAT32 $0FFFFFF8+)?
+        ORA DIR32+2
+        ORA DIR32+1
+        BNE AF_C2
+        LDA DIR32
+        CMP #2
+        BCC AF_N0
+AF_C2:  LDA DIR32+1
+        CMP #$FF
+        BNE AF_OK
+        LDA DIR32
+        CMP #$F8
+        BCC AF_OK
+        LDA {FAT_TYPE}
+        CMP #1
+        BEQ AF_N0
+        LDA DIR32+3
+        CMP #$0F
+        BCC AF_OK
+        LDA DIR32+2
+        CMP #$FF
+        BNE AF_OK
+AF_N0:  LDA #1
+        RTS
+AF_OK:
+""" + F._push32("DIR32") + F._call(OS_CL2LBA) + f"""
+        STA A_L
+        STX A_L+1
+        LDA z:$2A
+        STA A_L+2
+        LDA z:$2B
+        STA A_L+3
+        LDA #0
+        STA A_SC
+AF_S:   LDA A_L
+        CLC
+        ADC A_SC
+        STA A_T
+        LDX #1
+AF_A:   LDA A_L,X
+        ADC #0
+        STA A_T,X
+        INX
+        CPX #4
+        BNE AF_A
+""" + F._push32("A_T") + F._pushptr(ART_SBUF) + f"""
+        LDA #1
+        JSR {PUSHA}
+""" + F._call(OS_READ_SECT, 1) + f"""
+        BEQ AF_RD
+AF_NO:  LDA #1
+        RTS
+AF_RD:  LDA #{ART_SBUF & 0xFF}
+        STA z:$30
+        LDA #{ART_SBUF >> 8}
+        STA z:$31
+AF_E:   LDY #0
+        LDA ($30),Y
+        BEQ AF_NO               ; end of the folder
+        LDY #11
+        LDA ($30),Y
+        AND #$18                ; folders, volume label and long-name parts
+        BNE AF_NX
+        LDY #10
+AF_K:   LDA ($30),Y
+        CMP NAME11,Y
+        BNE AF_NX
+        DEY
+        BPL AF_K
+        LDY #26
+        LDA ($30),Y
+        STA FILE32
+        INY
+        LDA ($30),Y
+        STA FILE32+1
+        LDY #20
+        LDA ($30),Y
+        STA FILE32+2
+        INY
+        LDA ($30),Y
+        STA FILE32+3
+        LDA #0
+        RTS
+AF_NX:  LDA z:$30
+        CLC
+        ADC #32
+        STA z:$30
+        BCC AF_E
+        INC z:$31
+        LDA z:$31
+        CMP #{(ART_SBUF + 512) >> 8}
+        BNE AF_E
+        INC A_N                 ; at most 4096 sectors: a broken chain cannot loop forever
+        BNE AF_N2
+        INC A_N+1
+        LDA A_N+1
+        CMP #16
+        BCS AF_NO2
+AF_N2:  INC A_SC
+        LDA A_SC
+        CMP {SPC}
+        BCS AF_NC
+        JMP AF_S
+AF_NC:
+""" + F._pushptr("DIR32") + F._call(OS_NEXTCL, "DIR32 & 255", "DIR32 >> 8") + f"""
+        BNE AF_NO2
+        JMP AF_C
+AF_NO2: LDA #1
+        RTS
+A_N:    DS 2
+A_L:    DS 4
+A_T:    DS 4
+A_SC:   DS 1
+""")
