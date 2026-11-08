@@ -322,6 +322,14 @@ class EverDriveN8Emu:
         addr &= 0xFFFF
         if addr < 0x2000:
             return self.ram[addr & 0x07FF]
+        elif addr >= 0x8000:
+            if self.boot_decrypting and addr < 0x8200:
+                return self.k60[addr & 0xFF]
+            if addr >= 0xFC00 and (self.reg_data[0x09] & 0x04):
+                if addr < 0xFFFA:
+                    return self.bios_rom[addr - 0xFC00]
+            # $8000-$FFFF is mapped to PRG-RAM banks 0x0C, 0x0D, 0x0E, 0x0F
+            return self.prg_ram[0x0C + ((addr - 0x8000) >> 13)][addr & 0x1FFF]
         elif addr < 0x4000:
             reg = 0x2000 | (addr & 7)
             if reg == 0x2002:
@@ -494,6 +502,54 @@ class EverDriveN8Emu:
         hi = self.read(0xFFFB)
         self.PC = lo | (hi << 8)
 
+    def _imm(self):
+        v = self.PC; self.PC = (self.PC + 1) & 0xFFFF; return v
+    def _zp(self):
+        v = self.read(self.PC); self.PC = (self.PC + 1) & 0xFFFF; return v
+    def _zpx(self):
+        v = (self.read(self.PC) + self.X) & 0xFF; self.PC = (self.PC + 1) & 0xFFFF; return v
+    def _zpy(self):
+        v = (self.read(self.PC) + self.Y) & 0xFF; self.PC = (self.PC + 1) & 0xFFFF; return v
+    def _abso(self):
+        lo = self.read(self.PC); hi = self.read(self.PC + 1); self.PC = (self.PC + 2) & 0xFFFF; return lo | (hi << 8)
+    def _absx(self):
+        return (self._abso() + self.X) & 0xFFFF
+    def _absy(self):
+        return (self._abso() + self.Y) & 0xFFFF
+    def _indx(self):
+        z = (self.read(self.PC) + self.X) & 0xFF; self.PC = (self.PC + 1) & 0xFFFF
+        return self.read(z) | (self.read((z + 1) & 0xFF) << 8)
+    def _indy(self):
+        z = self.read(self.PC); self.PC = (self.PC + 1) & 0xFFFF
+        base = self.read(z) | (self.read((z + 1) & 0xFF) << 8)
+        return (base + self.Y) & 0xFFFF
+
+    def _adc(self, v):
+        c = 1 if (self.P & 1) else 0
+        r = self.A + v + c
+        if r > 0xFF: self.P |= 1
+        else: self.P &= ~1
+        if (~(self.A ^ v) & (self.A ^ r)) & 0x80: self.P |= 0x40
+        else: self.P &= ~0x40
+        self.A = self.set_zn(r)
+
+    def _sbc(self, v):
+        self._adc(v ^ 0xFF)
+
+    def _cmp(self, reg, v):
+        r = reg - v
+        if reg >= v: self.P |= 1
+        else: self.P &= ~1
+        self.set_zn(r)
+
+    def _branch(self, cond):
+        off = self.read(self.PC)
+        self.PC = (self.PC + 1) & 0xFFFF
+        if cond:
+            if off & 0x80: off -= 256
+            self.PC = (self.PC + off) & 0xFFFF
+
+
     def step(self):
         if 0xFC50 <= self.PC < 0xFC80 and (self.reg_data[0x09] & 0x04):
             self.handle_bios_trap(self.PC)
@@ -502,258 +558,10 @@ class EverDriveN8Emu:
         op = self.read(pc)
         self.PC = (pc + 1) & 0xFFFF
 
-        # Addressing mode helpers
-        def imm():
-            v = self.PC; self.PC = (self.PC + 1) & 0xFFFF; return v
-        def zp():
-            v = self.read(self.PC); self.PC = (self.PC + 1) & 0xFFFF; return v
-        def zpx():
-            v = (self.read(self.PC) + self.X) & 0xFF; self.PC = (self.PC + 1) & 0xFFFF; return v
-        def zpy():
-            v = (self.read(self.PC) + self.Y) & 0xFF; self.PC = (self.PC + 1) & 0xFFFF; return v
-        def abso():
-            lo = self.read(self.PC); hi = self.read(self.PC + 1); self.PC = (self.PC + 2) & 0xFFFF; return lo | (hi << 8)
-        def absx():
-            return (abso() + self.X) & 0xFFFF
-        def absy():
-            return (abso() + self.Y) & 0xFFFF
-        def indx():
-            z = (self.read(self.PC) + self.X) & 0xFF; self.PC = (self.PC + 1) & 0xFFFF
-            return self.read(z) | (self.read((z + 1) & 0xFF) << 8)
-        def indy():
-            z = self.read(self.PC); self.PC = (self.PC + 1) & 0xFFFF
-            base = self.read(z) | (self.read((z + 1) & 0xFF) << 8)
-            return (base + self.Y) & 0xFFFF
-
-        def adc(v):
-            c = 1 if (self.P & 1) else 0
-            r = self.A + v + c
-            if r > 0xFF: self.P |= 1
-            else: self.P &= ~1
-            if (~(self.A ^ v) & (self.A ^ r)) & 0x80: self.P |= 0x40
-            else: self.P &= ~0x40
-            self.A = self.set_zn(r)
-
-        def sbc(v):
-            adc(v ^ 0xFF)
-
-        def cmp(reg, v):
-            r = reg - v
-            if reg >= v: self.P |= 1
-            else: self.P &= ~1
-            self.set_zn(r)
-
-        def branch(cond):
-            off = self.read(self.PC)
-            self.PC = (self.PC + 1) & 0xFFFF
-            if cond:
-                if off & 0x80: off -= 256
-                self.PC = (self.PC + off) & 0xFFFF
-
-        # Opcodes
-        if op == 0x00:  # BRK
-            self.PC = (self.PC + 1) & 0xFFFF
-            self.push(self.PC >> 8); self.push(self.PC & 0xFF); self.push(self.P | 0x30)
-            self.P |= 0x04
-            self.PC = self.read(0xFFFE) | (self.read(0xFFFF) << 8)
-        elif op == 0xEA: pass  # NOP
-        elif op == 0x78: self.P |= 0x04   # SEI
-        elif op == 0x58: self.P &= ~0x04  # CLI
-        elif op == 0xD8: self.P &= ~0x08  # CLD
-        elif op == 0xF8: self.P |= 0x08   # SED
-        elif op == 0x18: self.P &= ~0x01  # CLC
-        elif op == 0x38: self.P |= 0x01   # SEC
-        elif op == 0xB8: self.P &= ~0x40  # CLV
-        # LDA
-        elif op == 0xA9: self.A = self.set_zn(self.read(imm()))
-        elif op == 0xA5: self.A = self.set_zn(self.read(zp()))
-        elif op == 0xB5: self.A = self.set_zn(self.read(zpx()))
-        elif op == 0xAD: self.A = self.set_zn(self.read(abso()))
-        elif op == 0xBD: self.A = self.set_zn(self.read(absx()))
-        elif op == 0xB9: self.A = self.set_zn(self.read(absy()))
-        elif op == 0xA1: self.A = self.set_zn(self.read(indx()))
-        elif op == 0xB1: self.A = self.set_zn(self.read(indy()))
-        # LDX
-        elif op == 0xA2: self.X = self.set_zn(self.read(imm()))
-        elif op == 0xA6: self.X = self.set_zn(self.read(zp()))
-        elif op == 0xB6: self.X = self.set_zn(self.read(zpy()))
-        elif op == 0xAE: self.X = self.set_zn(self.read(abso()))
-        elif op == 0xBE: self.X = self.set_zn(self.read(absy()))
-        # LDY
-        elif op == 0xA0: self.Y = self.set_zn(self.read(imm()))
-        elif op == 0xA4: self.Y = self.set_zn(self.read(zp()))
-        elif op == 0xB4: self.Y = self.set_zn(self.read(zpx()))
-        elif op == 0xAC: self.Y = self.set_zn(self.read(abso()))
-        elif op == 0xBC: self.Y = self.set_zn(self.read(absx()))
-        # STA
-        elif op == 0x85: self.write(zp(), self.A)
-        elif op == 0x95: self.write(zpx(), self.A)
-        elif op == 0x8D: self.write(abso(), self.A)
-        elif op == 0x9D: self.write(absx(), self.A)
-        elif op == 0x99: self.write(absy(), self.A)
-        elif op == 0x81: self.write(indx(), self.A)
-        elif op == 0x91: self.write(indy(), self.A)
-        # STX
-        elif op == 0x86: self.write(zp(), self.X)
-        elif op == 0x96: self.write(zpy(), self.X)
-        elif op == 0x8E: self.write(abso(), self.X)
-        # STY
-        elif op == 0x84: self.write(zp(), self.Y)
-        elif op == 0x94: self.write(zpx(), self.Y)
-        elif op == 0x8C: self.write(abso(), self.Y)
-        # Transfers
-        elif op == 0xAA: self.X = self.set_zn(self.A)
-        elif op == 0x8A: self.A = self.set_zn(self.X)
-        elif op == 0xA8: self.Y = self.set_zn(self.A)
-        elif op == 0x98: self.A = self.set_zn(self.Y)
-        elif op == 0x9A: self.S = self.X
-        elif op == 0xBA: self.X = self.set_zn(self.S)
-        # Stack
-        elif op == 0x48: self.push(self.A)
-        elif op == 0x68: self.A = self.set_zn(self.pull())
-        elif op == 0x08: self.push(self.P | 0x30)
-        elif op == 0x28: self.P = (self.pull() & ~0x10) | 0x20
-        # Jumps / Calls
-        elif op == 0x4C: self.PC = abso()
-        elif op == 0x6C:
-            a = abso()
-            lo = self.read(a)
-            hi = self.read((a & 0xFF00) | ((a + 1) & 0xFF))
-            self.PC = lo | (hi << 8)
-        elif op == 0x20:
-            t = abso()
-            ret = (self.PC - 1) & 0xFFFF
-            self.push(ret >> 8); self.push(ret & 0xFF)
-            self.PC = t
-        elif op == 0x60:
-            lo = self.pull(); hi = self.pull()
-            self.PC = ((lo | (hi << 8)) + 1) & 0xFFFF
-        elif op == 0x40:
-            self.P = (self.pull() & ~0x10) | 0x20
-            lo = self.pull(); hi = self.pull()
-            self.PC = lo | (hi << 8)
-        # Branches
-        elif op == 0x10: branch(not (self.P & 0x80))  # BPL
-        elif op == 0x30: branch(bool(self.P & 0x80))  # BMI
-        elif op == 0x50: branch(not (self.P & 0x40))  # BVC
-        elif op == 0x70: branch(bool(self.P & 0x40))  # BVS
-        elif op == 0x90: branch(not (self.P & 0x01))  # BCC
-        elif op == 0xB0: branch(bool(self.P & 0x01))  # BCS
-        elif op == 0xD0: branch(not (self.P & 0x02))  # BNE
-        elif op == 0xF0: branch(bool(self.P & 0x02))  # BEQ
-        # AND
-        elif op == 0x29: self.A = self.set_zn(self.A & self.read(imm()))
-        elif op == 0x25: self.A = self.set_zn(self.A & self.read(zp()))
-        elif op == 0x35: self.A = self.set_zn(self.A & self.read(zpx()))
-        elif op == 0x2D: self.A = self.set_zn(self.A & self.read(abso()))
-        elif op == 0x3D: self.A = self.set_zn(self.A & self.read(absx()))
-        elif op == 0x39: self.A = self.set_zn(self.A & self.read(absy()))
-        elif op == 0x21: self.A = self.set_zn(self.A & self.read(indx()))
-        elif op == 0x31: self.A = self.set_zn(self.A & self.read(indy()))
-        # ORA
-        elif op == 0x09: self.A = self.set_zn(self.A | self.read(imm()))
-        elif op == 0x05: self.A = self.set_zn(self.A | self.read(zp()))
-        elif op == 0x15: self.A = self.set_zn(self.A | self.read(zpx()))
-        elif op == 0x0D: self.A = self.set_zn(self.A | self.read(abso()))
-        elif op == 0x1D: self.A = self.set_zn(self.A | self.read(absx()))
-        elif op == 0x19: self.A = self.set_zn(self.A | self.read(absy()))
-        elif op == 0x01: self.A = self.set_zn(self.A | self.read(indx()))
-        elif op == 0x11: self.A = self.set_zn(self.A | self.read(indy()))
-        # EOR
-        elif op == 0x49: self.A = self.set_zn(self.A ^ self.read(imm()))
-        elif op == 0x45: self.A = self.set_zn(self.A ^ self.read(zp()))
-        elif op == 0x55: self.A = self.set_zn(self.A ^ self.read(zpx()))
-        elif op == 0x4D: self.A = self.set_zn(self.A ^ self.read(abso()))
-        elif op == 0x5D: self.A = self.set_zn(self.A ^ self.read(absx()))
-        elif op == 0x59: self.A = self.set_zn(self.A ^ self.read(absy()))
-        elif op == 0x41: self.A = self.set_zn(self.A ^ self.read(indx()))
-        elif op == 0x51: self.A = self.set_zn(self.A ^ self.read(indy()))
-        # BIT
-        elif op in (0x24, 0x2C):
-            v = self.read(zp() if op == 0x24 else abso())
-            if (self.A & v) == 0: self.P |= 0x02
-            else: self.P &= ~0x02
-            self.P = (self.P & ~0xC0) | (v & 0xC0)
-        # ADC / SBC
-        elif op == 0x69: adc(self.read(imm()))
-        elif op == 0x65: adc(self.read(zp()))
-        elif op == 0x75: adc(self.read(zpx()))
-        elif op == 0x6D: adc(self.read(abso()))
-        elif op == 0x7D: adc(self.read(absx()))
-        elif op == 0x79: adc(self.read(absy()))
-        elif op == 0x61: adc(self.read(indx()))
-        elif op == 0x71: adc(self.read(indy()))
-        elif op == 0xE9: sbc(self.read(imm()))
-        elif op == 0xE5: sbc(self.read(zp()))
-        elif op == 0xF5: sbc(self.read(zpx()))
-        elif op == 0xED: sbc(self.read(abso()))
-        elif op == 0xFD: sbc(self.read(absx()))
-        elif op == 0xF9: sbc(self.read(absy()))
-        elif op == 0xE1: sbc(self.read(indx()))
-        elif op == 0xF1: sbc(self.read(indy()))
-        # CMP / CPX / CPY
-        elif op == 0xC9: cmp(self.A, self.read(imm()))
-        elif op == 0xC5: cmp(self.A, self.read(zp()))
-        elif op == 0xD5: cmp(self.A, self.read(zpx()))
-        elif op == 0xCD: cmp(self.A, self.read(abso()))
-        elif op == 0xDD: cmp(self.A, self.read(absx()))
-        elif op == 0xD9: cmp(self.A, self.read(absy()))
-        elif op == 0xC1: cmp(self.A, self.read(indx()))
-        elif op == 0xD1: cmp(self.A, self.read(indy()))
-        elif op == 0xE0: cmp(self.X, self.read(imm()))
-        elif op == 0xE4: cmp(self.X, self.read(zp()))
-        elif op == 0xEC: cmp(self.X, self.read(abso()))
-        elif op == 0xC0: cmp(self.Y, self.read(imm()))
-        elif op == 0xC4: cmp(self.Y, self.read(zp()))
-        elif op == 0xCC: cmp(self.Y, self.read(abso()))
-        # INC / DEC / INX / DEX / INY / DEY
-        elif op == 0xE8: self.X = self.set_zn((self.X + 1) & 0xFF)
-        elif op == 0xCA: self.X = self.set_zn((self.X - 1) & 0xFF)
-        elif op == 0xC8: self.Y = self.set_zn((self.Y + 1) & 0xFF)
-        elif op == 0x88: self.Y = self.set_zn((self.Y - 1) & 0xFF)
-        elif op in (0xE6, 0xF6, 0xEE, 0xFE):
-            a = zp() if op == 0xE6 else (zpx() if op == 0xF6 else (abso() if op == 0xEE else absx()))
-            self.write(a, self.set_zn((self.read(a) + 1) & 0xFF))
-        elif op in (0xC6, 0xD6, 0xCE, 0xDE):
-            a = zp() if op == 0xC6 else (zpx() if op == 0xD6 else (abso() if op == 0xCE else absx()))
-            self.write(a, self.set_zn((self.read(a) - 1) & 0xFF))
-        # Shifts / Rotates
-        elif op == 0x0A:
-            self.P = (self.P & ~1) | ((self.A >> 7) & 1)
-            self.A = self.set_zn((self.A << 1) & 0xFF)
-        elif op in (0x06, 0x16, 0x0E, 0x1E):
-            a = zp() if op == 0x06 else (zpx() if op == 0x16 else (abso() if op == 0x0E else absx()))
-            v = self.read(a)
-            self.P = (self.P & ~1) | ((v >> 7) & 1)
-            self.write(a, self.set_zn((v << 1) & 0xFF))
-        elif op == 0x4A:
-            self.P = (self.P & ~1) | (self.A & 1)
-            self.A = self.set_zn(self.A >> 1)
-        elif op in (0x46, 0x56, 0x4E, 0x5E):
-            a = zp() if op == 0x46 else (zpx() if op == 0x56 else (abso() if op == 0x4E else absx()))
-            v = self.read(a)
-            self.P = (self.P & ~1) | (v & 1)
-            self.write(a, self.set_zn(v >> 1))
-        elif op == 0x2A:
-            c = self.P & 1
-            self.P = (self.P & ~1) | ((self.A >> 7) & 1)
-            self.A = self.set_zn(((self.A << 1) & 0xFF) | c)
-        elif op in (0x26, 0x36, 0x2E, 0x3E):
-            a = zp() if op == 0x26 else (zpx() if op == 0x36 else (abso() if op == 0x2E else absx()))
-            v = self.read(a); c = self.P & 1
-            self.P = (self.P & ~1) | ((v >> 7) & 1)
-            self.write(a, self.set_zn(((v << 1) & 0xFF) | c))
-        elif op == 0x6A:
-            c = (self.P & 1) << 7
-            self.P = (self.P & ~1) | (self.A & 1)
-            self.A = self.set_zn((self.A >> 1) | c)
-        elif op in (0x66, 0x76, 0x6E, 0x7E):
-            a = zp() if op == 0x66 else (zpx() if op == 0x76 else (abso() if op == 0x6E else absx()))
-            v = self.read(a); c = (self.P & 1) << 7
-            self.P = (self.P & ~1) | (v & 1)
-            self.write(a, self.set_zn((v >> 1) | c))
-        else:
+        f = _OPS[op]
+        if f is None:
             raise RuntimeError(f"Unknown opcode ${op:02X} at PC=${pc:04X}")
+        f(self, op, pc)
 
     def run_frames(self, n_frames=1, joy=0):
         self.joy_state = joy
@@ -876,6 +684,462 @@ class EverDriveN8Emu:
             if s:
                 lines.append(f"{ty:02d}: {s}")
         return "\n".join(lines)
+
+
+# ---- opcode handlers: one function per opcode group (generated from the old if/elif chain)
+def _op0(self, op, pc):  # $00
+    # BRK
+    self.PC = (self.PC + 1) & 0xFFFF
+    self.push(self.PC >> 8); self.push(self.PC & 0xFF); self.push(self.P | 0x30)
+    self.P |= 0x04
+    self.PC = self.read(0xFFFE) | (self.read(0xFFFF) << 8)
+def _op1(self, op, pc):  # $EA
+    pass
+def _op2(self, op, pc):  # $78
+    self.P |= 0x04   # SEI
+def _op3(self, op, pc):  # $58
+    self.P &= ~0x04  # CLI
+def _op4(self, op, pc):  # $D8
+    self.P &= ~0x08  # CLD
+def _op5(self, op, pc):  # $F8
+    self.P |= 0x08   # SED
+def _op6(self, op, pc):  # $18
+    self.P &= ~0x01  # CLC
+def _op7(self, op, pc):  # $38
+    self.P |= 0x01   # SEC
+def _op8(self, op, pc):  # $B8
+    self.P &= ~0x40  # CLV
+def _op9(self, op, pc):  # $A9
+    self.A = self.set_zn(self.read(self._imm()))
+def _op10(self, op, pc):  # $A5
+    self.A = self.set_zn(self.read(self._zp()))
+def _op11(self, op, pc):  # $B5
+    self.A = self.set_zn(self.read(self._zpx()))
+def _op12(self, op, pc):  # $AD
+    self.A = self.set_zn(self.read(self._abso()))
+def _op13(self, op, pc):  # $BD
+    self.A = self.set_zn(self.read(self._absx()))
+def _op14(self, op, pc):  # $B9
+    self.A = self.set_zn(self.read(self._absy()))
+def _op15(self, op, pc):  # $A1
+    self.A = self.set_zn(self.read(self._indx()))
+def _op16(self, op, pc):  # $B1
+    self.A = self.set_zn(self.read(self._indy()))
+def _op17(self, op, pc):  # $A2
+    self.X = self.set_zn(self.read(self._imm()))
+def _op18(self, op, pc):  # $A6
+    self.X = self.set_zn(self.read(self._zp()))
+def _op19(self, op, pc):  # $B6
+    self.X = self.set_zn(self.read(self._zpy()))
+def _op20(self, op, pc):  # $AE
+    self.X = self.set_zn(self.read(self._abso()))
+def _op21(self, op, pc):  # $BE
+    self.X = self.set_zn(self.read(self._absy()))
+def _op22(self, op, pc):  # $A0
+    self.Y = self.set_zn(self.read(self._imm()))
+def _op23(self, op, pc):  # $A4
+    self.Y = self.set_zn(self.read(self._zp()))
+def _op24(self, op, pc):  # $B4
+    self.Y = self.set_zn(self.read(self._zpx()))
+def _op25(self, op, pc):  # $AC
+    self.Y = self.set_zn(self.read(self._abso()))
+def _op26(self, op, pc):  # $BC
+    self.Y = self.set_zn(self.read(self._absx()))
+def _op27(self, op, pc):  # $85
+    self.write(self._zp(), self.A)
+def _op28(self, op, pc):  # $95
+    self.write(self._zpx(), self.A)
+def _op29(self, op, pc):  # $8D
+    self.write(self._abso(), self.A)
+def _op30(self, op, pc):  # $9D
+    self.write(self._absx(), self.A)
+def _op31(self, op, pc):  # $99
+    self.write(self._absy(), self.A)
+def _op32(self, op, pc):  # $81
+    self.write(self._indx(), self.A)
+def _op33(self, op, pc):  # $91
+    self.write(self._indy(), self.A)
+def _op34(self, op, pc):  # $86
+    self.write(self._zp(), self.X)
+def _op35(self, op, pc):  # $96
+    self.write(self._zpy(), self.X)
+def _op36(self, op, pc):  # $8E
+    self.write(self._abso(), self.X)
+def _op37(self, op, pc):  # $84
+    self.write(self._zp(), self.Y)
+def _op38(self, op, pc):  # $94
+    self.write(self._zpx(), self.Y)
+def _op39(self, op, pc):  # $8C
+    self.write(self._abso(), self.Y)
+def _op40(self, op, pc):  # $AA
+    self.X = self.set_zn(self.A)
+def _op41(self, op, pc):  # $8A
+    self.A = self.set_zn(self.X)
+def _op42(self, op, pc):  # $A8
+    self.Y = self.set_zn(self.A)
+def _op43(self, op, pc):  # $98
+    self.A = self.set_zn(self.Y)
+def _op44(self, op, pc):  # $9A
+    self.S = self.X
+def _op45(self, op, pc):  # $BA
+    self.X = self.set_zn(self.S)
+def _op46(self, op, pc):  # $48
+    self.push(self.A)
+def _op47(self, op, pc):  # $68
+    self.A = self.set_zn(self.pull())
+def _op48(self, op, pc):  # $08
+    self.push(self.P | 0x30)
+def _op49(self, op, pc):  # $28
+    self.P = (self.pull() & ~0x10) | 0x20
+def _op50(self, op, pc):  # $4C
+    self.PC = self._abso()
+def _op51(self, op, pc):  # $6C
+    a = self._abso()
+    lo = self.read(a)
+    hi = self.read((a & 0xFF00) | ((a + 1) & 0xFF))
+    self.PC = lo | (hi << 8)
+def _op52(self, op, pc):  # $20
+    t = self._abso()
+    ret = (self.PC - 1) & 0xFFFF
+    self.push(ret >> 8); self.push(ret & 0xFF)
+    self.PC = t
+def _op53(self, op, pc):  # $60
+    lo = self.pull(); hi = self.pull()
+    self.PC = ((lo | (hi << 8)) + 1) & 0xFFFF
+def _op54(self, op, pc):  # $40
+    self.P = (self.pull() & ~0x10) | 0x20
+    lo = self.pull(); hi = self.pull()
+    self.PC = lo | (hi << 8)
+def _op55(self, op, pc):  # $10
+    self._branch(not (self.P & 0x80))  # BPL
+def _op56(self, op, pc):  # $30
+    self._branch(bool(self.P & 0x80))  # BMI
+def _op57(self, op, pc):  # $50
+    self._branch(not (self.P & 0x40))  # BVC
+def _op58(self, op, pc):  # $70
+    self._branch(bool(self.P & 0x40))  # BVS
+def _op59(self, op, pc):  # $90
+    self._branch(not (self.P & 0x01))  # BCC
+def _op60(self, op, pc):  # $B0
+    self._branch(bool(self.P & 0x01))  # BCS
+def _op61(self, op, pc):  # $D0
+    self._branch(not (self.P & 0x02))  # BNE
+def _op62(self, op, pc):  # $F0
+    self._branch(bool(self.P & 0x02))  # BEQ
+def _op63(self, op, pc):  # $29
+    self.A = self.set_zn(self.A & self.read(self._imm()))
+def _op64(self, op, pc):  # $25
+    self.A = self.set_zn(self.A & self.read(self._zp()))
+def _op65(self, op, pc):  # $35
+    self.A = self.set_zn(self.A & self.read(self._zpx()))
+def _op66(self, op, pc):  # $2D
+    self.A = self.set_zn(self.A & self.read(self._abso()))
+def _op67(self, op, pc):  # $3D
+    self.A = self.set_zn(self.A & self.read(self._absx()))
+def _op68(self, op, pc):  # $39
+    self.A = self.set_zn(self.A & self.read(self._absy()))
+def _op69(self, op, pc):  # $21
+    self.A = self.set_zn(self.A & self.read(self._indx()))
+def _op70(self, op, pc):  # $31
+    self.A = self.set_zn(self.A & self.read(self._indy()))
+def _op71(self, op, pc):  # $09
+    self.A = self.set_zn(self.A | self.read(self._imm()))
+def _op72(self, op, pc):  # $05
+    self.A = self.set_zn(self.A | self.read(self._zp()))
+def _op73(self, op, pc):  # $15
+    self.A = self.set_zn(self.A | self.read(self._zpx()))
+def _op74(self, op, pc):  # $0D
+    self.A = self.set_zn(self.A | self.read(self._abso()))
+def _op75(self, op, pc):  # $1D
+    self.A = self.set_zn(self.A | self.read(self._absx()))
+def _op76(self, op, pc):  # $19
+    self.A = self.set_zn(self.A | self.read(self._absy()))
+def _op77(self, op, pc):  # $01
+    self.A = self.set_zn(self.A | self.read(self._indx()))
+def _op78(self, op, pc):  # $11
+    self.A = self.set_zn(self.A | self.read(self._indy()))
+def _op79(self, op, pc):  # $49
+    self.A = self.set_zn(self.A ^ self.read(self._imm()))
+def _op80(self, op, pc):  # $45
+    self.A = self.set_zn(self.A ^ self.read(self._zp()))
+def _op81(self, op, pc):  # $55
+    self.A = self.set_zn(self.A ^ self.read(self._zpx()))
+def _op82(self, op, pc):  # $4D
+    self.A = self.set_zn(self.A ^ self.read(self._abso()))
+def _op83(self, op, pc):  # $5D
+    self.A = self.set_zn(self.A ^ self.read(self._absx()))
+def _op84(self, op, pc):  # $59
+    self.A = self.set_zn(self.A ^ self.read(self._absy()))
+def _op85(self, op, pc):  # $41
+    self.A = self.set_zn(self.A ^ self.read(self._indx()))
+def _op86(self, op, pc):  # $51
+    self.A = self.set_zn(self.A ^ self.read(self._indy()))
+def _op87(self, op, pc):  # $24, $2C
+    v = self.read(self._zp() if op == 0x24 else self._abso())
+    if (self.A & v) == 0: self.P |= 0x02
+    else: self.P &= ~0x02
+    self.P = (self.P & ~0xC0) | (v & 0xC0)
+def _op88(self, op, pc):  # $69
+    self._adc(self.read(self._imm()))
+def _op89(self, op, pc):  # $65
+    self._adc(self.read(self._zp()))
+def _op90(self, op, pc):  # $75
+    self._adc(self.read(self._zpx()))
+def _op91(self, op, pc):  # $6D
+    self._adc(self.read(self._abso()))
+def _op92(self, op, pc):  # $7D
+    self._adc(self.read(self._absx()))
+def _op93(self, op, pc):  # $79
+    self._adc(self.read(self._absy()))
+def _op94(self, op, pc):  # $61
+    self._adc(self.read(self._indx()))
+def _op95(self, op, pc):  # $71
+    self._adc(self.read(self._indy()))
+def _op96(self, op, pc):  # $E9
+    self._sbc(self.read(self._imm()))
+def _op97(self, op, pc):  # $E5
+    self._sbc(self.read(self._zp()))
+def _op98(self, op, pc):  # $F5
+    self._sbc(self.read(self._zpx()))
+def _op99(self, op, pc):  # $ED
+    self._sbc(self.read(self._abso()))
+def _op100(self, op, pc):  # $FD
+    self._sbc(self.read(self._absx()))
+def _op101(self, op, pc):  # $F9
+    self._sbc(self.read(self._absy()))
+def _op102(self, op, pc):  # $E1
+    self._sbc(self.read(self._indx()))
+def _op103(self, op, pc):  # $F1
+    self._sbc(self.read(self._indy()))
+def _op104(self, op, pc):  # $C9
+    self._cmp(self.A, self.read(self._imm()))
+def _op105(self, op, pc):  # $C5
+    self._cmp(self.A, self.read(self._zp()))
+def _op106(self, op, pc):  # $D5
+    self._cmp(self.A, self.read(self._zpx()))
+def _op107(self, op, pc):  # $CD
+    self._cmp(self.A, self.read(self._abso()))
+def _op108(self, op, pc):  # $DD
+    self._cmp(self.A, self.read(self._absx()))
+def _op109(self, op, pc):  # $D9
+    self._cmp(self.A, self.read(self._absy()))
+def _op110(self, op, pc):  # $C1
+    self._cmp(self.A, self.read(self._indx()))
+def _op111(self, op, pc):  # $D1
+    self._cmp(self.A, self.read(self._indy()))
+def _op112(self, op, pc):  # $E0
+    self._cmp(self.X, self.read(self._imm()))
+def _op113(self, op, pc):  # $E4
+    self._cmp(self.X, self.read(self._zp()))
+def _op114(self, op, pc):  # $EC
+    self._cmp(self.X, self.read(self._abso()))
+def _op115(self, op, pc):  # $C0
+    self._cmp(self.Y, self.read(self._imm()))
+def _op116(self, op, pc):  # $C4
+    self._cmp(self.Y, self.read(self._zp()))
+def _op117(self, op, pc):  # $CC
+    self._cmp(self.Y, self.read(self._abso()))
+def _op118(self, op, pc):  # $E8
+    self.X = self.set_zn((self.X + 1) & 0xFF)
+def _op119(self, op, pc):  # $CA
+    self.X = self.set_zn((self.X - 1) & 0xFF)
+def _op120(self, op, pc):  # $C8
+    self.Y = self.set_zn((self.Y + 1) & 0xFF)
+def _op121(self, op, pc):  # $88
+    self.Y = self.set_zn((self.Y - 1) & 0xFF)
+def _op122(self, op, pc):  # $E6, $F6, $EE, $FE
+    a = self._zp() if op == 0xE6 else (self._zpx() if op == 0xF6 else (self._abso() if op == 0xEE else self._absx()))
+    self.write(a, self.set_zn((self.read(a) + 1) & 0xFF))
+def _op123(self, op, pc):  # $C6, $D6, $CE, $DE
+    a = self._zp() if op == 0xC6 else (self._zpx() if op == 0xD6 else (self._abso() if op == 0xCE else self._absx()))
+    self.write(a, self.set_zn((self.read(a) - 1) & 0xFF))
+def _op124(self, op, pc):  # $0A
+    self.P = (self.P & ~1) | ((self.A >> 7) & 1)
+    self.A = self.set_zn((self.A << 1) & 0xFF)
+def _op125(self, op, pc):  # $06, $16, $0E, $1E
+    a = self._zp() if op == 0x06 else (self._zpx() if op == 0x16 else (self._abso() if op == 0x0E else self._absx()))
+    v = self.read(a)
+    self.P = (self.P & ~1) | ((v >> 7) & 1)
+    self.write(a, self.set_zn((v << 1) & 0xFF))
+def _op126(self, op, pc):  # $4A
+    self.P = (self.P & ~1) | (self.A & 1)
+    self.A = self.set_zn(self.A >> 1)
+def _op127(self, op, pc):  # $46, $56, $4E, $5E
+    a = self._zp() if op == 0x46 else (self._zpx() if op == 0x56 else (self._abso() if op == 0x4E else self._absx()))
+    v = self.read(a)
+    self.P = (self.P & ~1) | (v & 1)
+    self.write(a, self.set_zn(v >> 1))
+def _op128(self, op, pc):  # $2A
+    c = self.P & 1
+    self.P = (self.P & ~1) | ((self.A >> 7) & 1)
+    self.A = self.set_zn(((self.A << 1) & 0xFF) | c)
+def _op129(self, op, pc):  # $26, $36, $2E, $3E
+    a = self._zp() if op == 0x26 else (self._zpx() if op == 0x36 else (self._abso() if op == 0x2E else self._absx()))
+    v = self.read(a); c = self.P & 1
+    self.P = (self.P & ~1) | ((v >> 7) & 1)
+    self.write(a, self.set_zn(((v << 1) & 0xFF) | c))
+def _op130(self, op, pc):  # $6A
+    c = (self.P & 1) << 7
+    self.P = (self.P & ~1) | (self.A & 1)
+    self.A = self.set_zn((self.A >> 1) | c)
+def _op131(self, op, pc):  # $66, $76, $6E, $7E
+    a = self._zp() if op == 0x66 else (self._zpx() if op == 0x76 else (self._abso() if op == 0x6E else self._absx()))
+    v = self.read(a); c = (self.P & 1) << 7
+    self.P = (self.P & ~1) | (v & 1)
+    self.write(a, self.set_zn((v >> 1) | c))
+
+_OPS = [None] * 256
+_OPS[0x00] = _op0
+_OPS[0xEA] = _op1
+_OPS[0x78] = _op2
+_OPS[0x58] = _op3
+_OPS[0xD8] = _op4
+_OPS[0xF8] = _op5
+_OPS[0x18] = _op6
+_OPS[0x38] = _op7
+_OPS[0xB8] = _op8
+_OPS[0xA9] = _op9
+_OPS[0xA5] = _op10
+_OPS[0xB5] = _op11
+_OPS[0xAD] = _op12
+_OPS[0xBD] = _op13
+_OPS[0xB9] = _op14
+_OPS[0xA1] = _op15
+_OPS[0xB1] = _op16
+_OPS[0xA2] = _op17
+_OPS[0xA6] = _op18
+_OPS[0xB6] = _op19
+_OPS[0xAE] = _op20
+_OPS[0xBE] = _op21
+_OPS[0xA0] = _op22
+_OPS[0xA4] = _op23
+_OPS[0xB4] = _op24
+_OPS[0xAC] = _op25
+_OPS[0xBC] = _op26
+_OPS[0x85] = _op27
+_OPS[0x95] = _op28
+_OPS[0x8D] = _op29
+_OPS[0x9D] = _op30
+_OPS[0x99] = _op31
+_OPS[0x81] = _op32
+_OPS[0x91] = _op33
+_OPS[0x86] = _op34
+_OPS[0x96] = _op35
+_OPS[0x8E] = _op36
+_OPS[0x84] = _op37
+_OPS[0x94] = _op38
+_OPS[0x8C] = _op39
+_OPS[0xAA] = _op40
+_OPS[0x8A] = _op41
+_OPS[0xA8] = _op42
+_OPS[0x98] = _op43
+_OPS[0x9A] = _op44
+_OPS[0xBA] = _op45
+_OPS[0x48] = _op46
+_OPS[0x68] = _op47
+_OPS[0x08] = _op48
+_OPS[0x28] = _op49
+_OPS[0x4C] = _op50
+_OPS[0x6C] = _op51
+_OPS[0x20] = _op52
+_OPS[0x60] = _op53
+_OPS[0x40] = _op54
+_OPS[0x10] = _op55
+_OPS[0x30] = _op56
+_OPS[0x50] = _op57
+_OPS[0x70] = _op58
+_OPS[0x90] = _op59
+_OPS[0xB0] = _op60
+_OPS[0xD0] = _op61
+_OPS[0xF0] = _op62
+_OPS[0x29] = _op63
+_OPS[0x25] = _op64
+_OPS[0x35] = _op65
+_OPS[0x2D] = _op66
+_OPS[0x3D] = _op67
+_OPS[0x39] = _op68
+_OPS[0x21] = _op69
+_OPS[0x31] = _op70
+_OPS[0x09] = _op71
+_OPS[0x05] = _op72
+_OPS[0x15] = _op73
+_OPS[0x0D] = _op74
+_OPS[0x1D] = _op75
+_OPS[0x19] = _op76
+_OPS[0x01] = _op77
+_OPS[0x11] = _op78
+_OPS[0x49] = _op79
+_OPS[0x45] = _op80
+_OPS[0x55] = _op81
+_OPS[0x4D] = _op82
+_OPS[0x5D] = _op83
+_OPS[0x59] = _op84
+_OPS[0x41] = _op85
+_OPS[0x51] = _op86
+_OPS[0x24] = _op87
+_OPS[0x2C] = _op87
+_OPS[0x69] = _op88
+_OPS[0x65] = _op89
+_OPS[0x75] = _op90
+_OPS[0x6D] = _op91
+_OPS[0x7D] = _op92
+_OPS[0x79] = _op93
+_OPS[0x61] = _op94
+_OPS[0x71] = _op95
+_OPS[0xE9] = _op96
+_OPS[0xE5] = _op97
+_OPS[0xF5] = _op98
+_OPS[0xED] = _op99
+_OPS[0xFD] = _op100
+_OPS[0xF9] = _op101
+_OPS[0xE1] = _op102
+_OPS[0xF1] = _op103
+_OPS[0xC9] = _op104
+_OPS[0xC5] = _op105
+_OPS[0xD5] = _op106
+_OPS[0xCD] = _op107
+_OPS[0xDD] = _op108
+_OPS[0xD9] = _op109
+_OPS[0xC1] = _op110
+_OPS[0xD1] = _op111
+_OPS[0xE0] = _op112
+_OPS[0xE4] = _op113
+_OPS[0xEC] = _op114
+_OPS[0xC0] = _op115
+_OPS[0xC4] = _op116
+_OPS[0xCC] = _op117
+_OPS[0xE8] = _op118
+_OPS[0xCA] = _op119
+_OPS[0xC8] = _op120
+_OPS[0x88] = _op121
+_OPS[0xE6] = _op122
+_OPS[0xF6] = _op122
+_OPS[0xEE] = _op122
+_OPS[0xFE] = _op122
+_OPS[0xC6] = _op123
+_OPS[0xD6] = _op123
+_OPS[0xCE] = _op123
+_OPS[0xDE] = _op123
+_OPS[0x0A] = _op124
+_OPS[0x06] = _op125
+_OPS[0x16] = _op125
+_OPS[0x0E] = _op125
+_OPS[0x1E] = _op125
+_OPS[0x4A] = _op126
+_OPS[0x46] = _op127
+_OPS[0x56] = _op127
+_OPS[0x4E] = _op127
+_OPS[0x5E] = _op127
+_OPS[0x2A] = _op128
+_OPS[0x26] = _op129
+_OPS[0x36] = _op129
+_OPS[0x2E] = _op129
+_OPS[0x3E] = _op129
+_OPS[0x6A] = _op130
+_OPS[0x66] = _op131
+_OPS[0x76] = _op131
+_OPS[0x6E] = _op131
+_OPS[0x7E] = _op131
 
 
 if __name__ == "__main__":

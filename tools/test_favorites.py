@@ -28,6 +28,7 @@ TOOLS = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(TOOLS)
 sys.path.insert(0, TOOLS)
 from edfc_emu import EverDriveN8Emu
+from testparts import part
 from fav_runtime import favs_dat, FAV_MAGIC, FAV_TAIL
 from art_runtime import T_LIMIT
 
@@ -125,7 +126,7 @@ def main():
         print(("  [OK]   " if cond else "  [FAIL] ") + msg)
         failures += 0 if cond else 1
 
-    with tempfile.TemporaryDirectory() as root:
+    for root in part(1):
         build_sd(root)
         emu = EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root)
         min_s = [0xFF]
@@ -237,7 +238,7 @@ def main():
         expect((bytes(emu.ram[0x300:0x360]) + bytes(emu.ram[0x380:0x400])) == p3, "OS DATA page $0300 unchanged")
         expect(0x100 + min_s[0] >= T_LIMIT, f"hardware stack stayed above the trampoline (min ${0x100 + min_s[0]:04X})")
 
-    with tempfile.TemporaryDirectory() as root:
+    for root in part(2):
         build_sd(root, favs=False)
         emu = EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root)
         emu.boot_to_browser()
@@ -259,7 +260,7 @@ def main():
         expect(bytes(emu.sd_img) == img0, "no FAVS.DAT: nothing written to the card")
 
     # --- Recentes
-    with tempfile.TemporaryDirectory() as root:
+    for root in part(3):
         build_sd(root)
 
         def launch(img, name):
@@ -325,7 +326,7 @@ def main():
     #     (previous game's SRAM -> its EDFC/SAVE file, this game's save -> SRAM). v1.8.3 and
     #     earlier went straight to $B7AC: the save was never loaded, and the next launch from
     #     the browser backed the empty SRAM up over it (the save "vanished")
-    with tempfile.TemporaryDirectory() as root:
+    for root in part(4):
         build_sd(root)
         for name, seed in (("Alpha Quest (World).nes", 1), ("Beta Racer (World).nes", 2)):
             open(os.path.join(root, name), "wb").write(make_rom(seed, battery=True))

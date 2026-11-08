@@ -19,6 +19,7 @@ TOOLS = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(TOOLS)
 sys.path.insert(0, TOOLS)
 from edfc_emu import EverDriveN8Emu
+from testparts import part
 import nes_art
 
 ART_CODE = range(0x73D0, 0x8000)     # far code in bank $0B (art_runtime + fav_runtime)
@@ -138,7 +139,7 @@ def main(shot=None):
                and all(oam[i * 4 + 2] == art[0x610 + i] for i in range(48)),
                f"{label}: CHR tiles, palettes and attributes from the art file")
 
-    with tempfile.TemporaryDirectory() as root:
+    for root in part(1):
         build_sd(root, art_rom, plain_rom, art)
         emu = EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root)
         watch = Watch(emu)
@@ -225,7 +226,7 @@ def main(shot=None):
         emu.step = step
         expect(reached == [b"ZELDA   F"], f"Carregar jogo after switching starts the switched game ({reached})")
 
-    with tempfile.TemporaryDirectory() as root:
+    for root in part(2):
         build_sd(root, art_rom, plain_rom, art)
         emu = EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root)
         emu.boot_to_browser()

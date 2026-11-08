@@ -6,11 +6,12 @@ Todos os comandos rodam na raiz do repositório.
 ## Build e testes (sempre)
 ```bash
 python tools/install_banner_theme.py   # aplica tudo em EDFC/OS.BIN e gera EDFC/OVL*.BIN (idempotente)
-python tools/test_theme_safety.py      # deve terminar em PASSED
-python tools/test_game_art.py          # deve terminar em PASSED
-python tools/test_favorites.py         # deve terminar em PASSED
-python tools/test_search.py            # deve terminar em PASSED
+python tools/run_tests.py              # os 4 testes em paralelo (~45 s); deve terminar em PASSED
 ```
+Cada teste também roda sozinho (`python tools/test_search.py`) ou só uma parte
+(`python tools/test_search.py --part 2`): os blocos `for root in part(K)` de `tools/testparts.py` são
+independentes (cada um com seu cartão temporário) e o `run_tests.py` roda um processo por bloco. Bloco novo
+num teste: use `part(K)` com o próximo número e atualize `TESTS` em `run_tests.py`.
 `python tools/resident_runtime.py` mostra o tamanho do residente e de cada módulo.
 Rodar o install duas vezes não muda nada; se `git diff EDFC/OS.BIN` mostrar diferença sem você ter
 mudado código, algo está errado.

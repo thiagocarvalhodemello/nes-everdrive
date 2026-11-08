@@ -29,6 +29,7 @@ TOOLS = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(TOOLS)
 sys.path.insert(0, TOOLS)
 from edfc_emu import EverDriveN8Emu
+from testparts import part
 from find_runtime import KEYS, KCOLS
 from test_favorites import make_rom
 
@@ -88,6 +89,17 @@ def open_search(emu):
     emu.press_button(B, wait_frames=150)
 
 
+def choose(emu, name):
+    """pick the search result whose row contains name; -> (screen, status bar lines)"""
+    rows = [l for l in screen(emu).splitlines() if "lpha" in l.lower() and "Resultados" not in l and "Nome" not in l]
+    k = next(i for i, l in enumerate(rows) if name[:20] in l)
+    for _ in range(k):
+        emu.press_button(DOWN, wait_frames=15)
+    emu.press_button(B, wait_frames=150)
+    t = screen(emu)
+    return t, [l for l in t.splitlines() if l.startswith("28:")]
+
+
 def main():
     os.chdir(REPO)
     failures = 0
@@ -97,7 +109,7 @@ def main():
         print(("  [OK]   " if cond else "  [FAIL] ") + msg)
         failures += 0 if cond else 1
 
-    with tempfile.TemporaryDirectory() as root:
+    for root in part(1):
         build_sd(root)
         emu = EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root)
         expect(emu.boot_to_main_menu(), "main menu opens by itself after boot")
@@ -144,16 +156,7 @@ def main():
         expect("Resultados" in txt and sorted(found) == sorted(FOUND) and "ALPHAX" not in txt,
                f"results: .nes/.fds names containing 'alpha' in every folder but EDFC ({found})")
 
-        def choose(name):
-            rows = [l for l in screen(emu).splitlines() if "lpha" in l.lower() and "Resultados" not in l and "Nome" not in l]
-            k = next(i for i, l in enumerate(rows) if name[:20] in l)
-            for _ in range(k):
-                emu.press_button(DOWN, wait_frames=15)
-            emu.press_button(B, wait_frames=150)
-            t = screen(emu)
-            return t, [l for l in t.splitlines() if l.startswith("28:")]
-
-        txt, status = choose(NAMES[2])
+        txt, status = choose(emu, NAMES[2])
         expect("Menu Principal" not in txt and status and "Super Alpha Bros" in status[0],
                f"result chosen: browser with it selected ({status})")
         emu.press_button(B, wait_frames=90)
@@ -163,7 +166,7 @@ def main():
         open_search(emu)                                        # (the game menu loaded another module)
         type_text(emu, "ALPHA", (0, 0))
         emu.press_button(START, wait_frames=300)
-        txt, status = choose(SUB[2][1])
+        txt, status = choose(emu, SUB[2][1])
         expect(status and "Alpha Deep" in status[0] and "Alpha Quest" not in txt,
                f"result in Hacks/Deep: browser opens that folder with it selected ({status})")
         emu.press_button(A, wait_frames=120)
@@ -172,12 +175,6 @@ def main():
         emu.press_button(A, wait_frames=120)
         txt = screen(emu)
         expect("Hacks" in txt and "Alpha Quest" in txt, "cancel again -> root")
-        for want in (SUB[5][1], "ALPHAZ  NES"):              # after a folder / an 8.3 name in Hacks
-            open_search(emu)
-            type_text(emu, "ALPHA", (0, 0))
-            emu.press_button(START, wait_frames=300)
-            txt, status = choose(want)
-            expect(status and want in status[0], f"result in Hacks: {want!r} selected ({status})")
 
         open_search(emu)
         for _ in range(5):
@@ -194,7 +191,7 @@ def main():
         expect(bytes(emu.ram[0x300:0x360]) + bytes(emu.ram[0x380:0x400]) == p3, "OS DATA page $0300 unchanged")
         expect(emu.ram[0x450] | emu.ram[0x451] << 8 == heap, "heap pointer restored")
 
-    with tempfile.TemporaryDirectory() as root:              # a folder longer than one cluster
+    for root in part(2):              # a folder longer than one cluster
         build_sd(root)
         os.makedirs(os.path.join(root, "Muitos"))
         for i in range(40):                                    # 3 LFN entries + 1 each: 5+ clusters
@@ -211,7 +208,7 @@ def main():
         nums = sorted(int(n[22:25]) for n in names if n.startswith(b"Zork"))
         expect(nums == list(range(31)), f"multi-cluster folder: 31 distinct hits 000..030 ({nums[:3]}..{nums[-3:]})")
 
-    with tempfile.TemporaryDirectory() as root:              # reset after a game
+    for root in part(3):              # reset after a game
         build_sd(root)
         emu = EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root)
         emu.boot_to_browser()
@@ -229,7 +226,7 @@ def main():
         emu.press_button(A, wait_frames=60)
         expect("Menu Principal" not in screen(emu) and "Alpha" in screen(emu), "... and closes back to the browser")
 
-    with tempfile.TemporaryDirectory() as root:
+    for root in part(4):
         build_sd(root, find=False)
         emu = EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root)
         emu.boot_to_browser()
@@ -237,6 +234,23 @@ def main():
         expect("Falta EDFC/OVL*.BIN" in screen(emu), "missing OVLFIND.BIN -> message")
         emu.press_button(B, wait_frames=60)
         expect("Menu Principal" in screen(emu), "back in the main menu")
+
+    for root in part(5):              # results inside Hacks: after a folder / an 8.3 name
+        build_sd(root)
+        emu = EverDriveN8Emu(os.path.join(REPO, "EDFC", "OS.BIN"), root)
+        emu.boot_to_browser()
+        img0 = bytes(emu.sd_img)
+        p3 = bytes(emu.ram[0x300:0x360]) + bytes(emu.ram[0x380:0x400])
+        heap = emu.ram[0x450] | emu.ram[0x451] << 8
+        for want in (SUB[5][1], "ALPHAZ  NES"):
+            open_search(emu)
+            type_text(emu, "ALPHA", (0, 0))
+            emu.press_button(START, wait_frames=300)
+            txt, status = choose(emu, want)
+            expect(status and want in status[0], f"result in Hacks: {want!r} selected ({status})")
+        expect(bytes(emu.sd_img) == img0, "search wrote nothing to the card (Hacks results)")
+        expect(bytes(emu.ram[0x300:0x360]) + bytes(emu.ram[0x380:0x400]) == p3, "OS DATA page $0300 unchanged (Hacks results)")
+        expect(emu.ram[0x450] | emu.ram[0x451] << 8 == heap, "heap pointer restored (Hacks results)")
 
     print(f"\n{'PASSED' if failures == 0 else f'FAILED ({failures})'}")
     return failures

@@ -41,7 +41,7 @@ Leia antes de mexer:
    patches sobre ele e é **idempotente**. **Não rode `translate_os_ptbr.py`** para "reconstruir": ele
    gera uma base diferente (verificado: 39.516 bytes de diferença) e desfaz a tradução atual.
 8. **Testes do emulador precisam passar** antes de commitar: `tools/test_theme_safety.py`,
-   `tools/test_game_art.py`, `tools/test_favorites.py` (favoritos + recentes) e `tools/test_search.py`. O emulador **não** simula tempo real de PPU; bugs de timing só aparecem no
+   `tools/test_game_art.py`, `tools/test_favorites.py` (favoritos + recentes) e `tools/test_search.py`. `python tools/run_tests.py` roda os 4 em paralelo. O emulador **não** simula tempo real de PPU; bugs de timing só aparecem no
    hardware — descreva isso honestamente ao usuário.
 9. **O console só grava no SD dentro do `EDFC/FAVS.DAT` e do `EDFC/RECENTS.DAT`**, que já existem com
    tamanho fixo (sem mexer em FAT/diretório) e só depois de ler o setor e conferir slot + assinatura.
@@ -57,10 +57,11 @@ Leia antes de mexer:
 ```bash
 # 1. editar tools/theme_runtime.py, tools/art_runtime.py, tools/banner_art.py, ...
 python tools/install_banner_theme.py      # aplica tudo em EDFC/OS.BIN (idempotente)
-python tools/test_theme_safety.py         # temas, SELECT/START, NMI, assinatura, reboot
-python tools/test_game_art.py             # menu do jogo, capas, página 3 intacta, "Carregar jogo"
-python tools/test_favorites.py            # favoritos e recentes; só FAVS.DAT/RECENTS.DAT são gravados
-python tools/test_search.py               # Menu Principal no boot, busca em todas as pastas, resultados
+python tools/run_tests.py                 # os 4 testes abaixo em paralelo (~45 s), um processo por parte
+#   test_theme_safety.py  temas, SELECT/START, NMI, assinatura, reboot
+#   test_game_art.py      menu do jogo, capas, página 3 intacta, "Carregar jogo"
+#   test_favorites.py     favoritos e recentes; saves; só FAVS.DAT/RECENTS.DAT (e o save do OS) gravados
+#   test_search.py        Menu Principal no boot, busca em todas as pastas, resultados
 # 2. se a tela mudou: atualizar capturas
 python tools/capture_theme_screenshots.py
 python tools/capture_art_screenshots.py --arts <pasta com EDFC/ARTS> <roms...>
@@ -95,6 +96,7 @@ Commits: mensagens em português, estilo `tipo(escopo): resumo` (ex.: `fix(art):
 | `tools/art_pack.py` | PC: baixa/converte capas do libretro (`build`) e instala no cartão (`install`). |
 | `tools/edfc_emu.py` | Emulador 6502 + PPU simplificado + BIOS/SD falsos (imagem FAT16 com LFN gerada de uma pasta). |
 | `tools/test_theme_safety.py`, `tools/test_game_art.py`, `tools/test_favorites.py`, `tools/test_search.py` | Testes de regressão (rodar sempre). |
+| `tools/run_tests.py`, `tools/testparts.py` | Roda os testes em paralelo (um processo por parte `--part K`). |
 | `tools/capture_*_screenshots.py` | Capturas para README/release. |
 | `tools/package_releases.py`, `tools/create_github_release.py` | Empacotar (2 zips) e publicar release via `gh`. |
 | `translate_os_ptbr.py`, `tools/patch_font_and_strings.py` | Pipeline histórico da tradução (ver regra 7). |
